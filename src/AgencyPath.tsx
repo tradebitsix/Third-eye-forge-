@@ -14,6 +14,7 @@ export interface NodeData {
 interface AgencyPathProps {
   nodes: NodeData[];
   onNodeInteract: (index: number) => void;
+  qiIntensity: number;
 }
 
 // ---------------------------------------------------------
@@ -25,42 +26,29 @@ function NodeVisual({ node, onClick }: { node: NodeData, onClick: () => void }) 
 
   // Pre-generate particle initial velocities for the healing burst
   const particles = useMemo(() => {
-    return Array.from({ length: 30 }).map(() => ({
+    return Array.from({ length: 40 }).map(() => ({
       vel: new THREE.Vector3(
         (Math.random() - 0.5) * 2,
-        (Math.random() - 0.5) * 2,
+        Math.random() * 2,
         (Math.random() - 0.5) * 2
-      ).normalize().multiplyScalar(Math.random() * 2 + 1)
+      ).normalize().multiplyScalar(Math.random() * 3 + 1)
     }));
   }, []);
-
-  // Pre-generate the trajectory logic for the "Roof Leap Arc"
-  const roofLeapArc = useMemo(() => {
-    const pts = [];
-    if (node.type === 'roof') {
-      // Calculate Leap, Tuck, Roll (Parabolic arc)
-      for (let i = 0; i <= 20; i++) {
-        const t = i / 20;
-        pts.push(new THREE.Vector3(t * 2, Math.sin(t * Math.PI) * 1.5, 0));
-      }
-    }
-    return pts;
-  }, [node.type]);
 
   useFrame((state, delta) => {
     if (meshRef.current) {
       if (!node.healed) {
         // BATTLE WOUND: Unhealed trauma is a cracked, chaotic, jittery mesh
-        meshRef.current.rotation.x += Math.random() * 0.2;
-        meshRef.current.rotation.y += Math.random() * 0.2;
+        meshRef.current.rotation.x += Math.random() * 0.3;
+        meshRef.current.rotation.y += Math.random() * 0.3;
         meshRef.current.position.set(
-          (Math.random() - 0.5) * 0.1,
-          (Math.random() - 0.5) * 0.1,
-          (Math.random() - 0.5) * 0.1
+          node.position.x + (Math.random() - 0.5) * 0.15,
+          node.position.y + (Math.random() - 0.5) * 0.15,
+          node.position.z + (Math.random() - 0.5) * 0.15
         );
       } else {
         // HEALED: Smooth rotation, centers beautifully into alignment
-        meshRef.current.position.lerp(new THREE.Vector3(0, 0, 0), 0.1);
+        meshRef.current.position.lerp(node.position, 0.1);
         meshRef.current.rotation.y += delta * 1.5;
         meshRef.current.rotation.x += delta * 0.5;
       }
@@ -71,14 +59,14 @@ function NodeVisual({ node, onClick }: { node: NodeData, onClick: () => void }) 
       particlesRef.current.children.forEach((p, i) => {
         const vel = particles[i].vel;
         p.position.add(vel.clone().multiplyScalar(delta));
-        p.scale.subScalar(delta * 0.4);
+        p.scale.subScalar(delta * 0.6);
         if (p.scale.x < 0) p.scale.set(0, 0, 0); // Disappear
       });
     }
   });
 
   return (
-    <group position={node.position}>
+    <group>
       <mesh
         ref={meshRef}
         onClick={onClick}
@@ -86,7 +74,7 @@ function NodeVisual({ node, onClick }: { node: NodeData, onClick: () => void }) 
         onPointerOut={() => (document.body.style.cursor = 'auto')}
       >
         {node.healed ? (
-          <icosahedronGeometry args={[0.3, 4]} /> // Smooth high-poly curve
+          <icosahedronGeometry args={[0.35, 4]} /> // Smooth high-poly curve
         ) : (
           <icosahedronGeometry args={[0.3, 0]} /> // Jagged low-poly wound
         )}
@@ -94,41 +82,31 @@ function NodeVisual({ node, onClick }: { node: NodeData, onClick: () => void }) 
           color={node.healed ? "#00ffcc" : "#ff0033"}
           wireframe={!node.healed}
           emissive={node.healed ? "#00ffcc" : "#330000"}
-          emissiveIntensity={node.healed ? 0.8 : 0.4}
+          emissiveIntensity={node.healed ? 0.8 : 0.6}
         />
       </mesh>
 
       {/* Particle Healing Burst */}
       {node.healed && (
-        <group ref={particlesRef}>
+        <group ref={particlesRef} position={node.position}>
           {particles.map((_, pi) => (
             <mesh key={pi}>
-              <sphereGeometry args={[0.04]} />
-              <meshBasicMaterial color="#00ffff" transparent opacity={0.6} />
+              <boxGeometry args={[0.08, 0.08, 0.08]} />
+              <meshBasicMaterial color="#00ffff" transparent opacity={0.8} />
             </mesh>
           ))}
         </group>
       )}
 
-      {/* Roof Leap Arc Visualization */}
-      {node.healed && node.type === 'roof' && (
-        <group position={[-1, 0, 0]}>
-          <Line points={roofLeapArc} color="#ffff00" lineWidth={3} dashed dashScale={10} />
-          <Text position={[1, 1.8, 0]} fontSize={0.15} color="#ffff00">
-            CALCULATE LEAP. TUCK. ROLL.
-          </Text>
-        </group>
-      )}
-
       {/* Text Labels & Spatial Audio Hints */}
-      <Text position={[0, 1.2, 0]} fontSize={0.3} color={node.healed ? "#00ffcc" : "#ffdddd"} anchorX="center">
+      <Text position={[node.position.x, node.position.y + 0.8, node.position.z]} fontSize={0.25} color={node.healed ? "#00ffcc" : "#ffdddd"} anchorX="center">
         {node.label}
       </Text>
 
       <Float speed={2} rotationIntensity={0} floatIntensity={0.5}>
         <Text
-          position={[0, -0.8, 0]}
-          fontSize={0.2}
+          position={[node.position.x, node.position.y - 0.6, node.position.z]}
+          fontSize={0.16}
           color={node.healed ? "#ffffff" : "#aa3333"}
           opacity={node.healed ? 1 : 0.8}
           transparent
@@ -136,8 +114,8 @@ function NodeVisual({ node, onClick }: { node: NodeData, onClick: () => void }) 
           {node.quote}
         </Text>
         {node.healed && (
-          <Text position={[0, -1.1, 0]} fontSize={0.12} color="#00ffcc">
-            [Spatial Audio: "I Control Me • Be Like Water"]
+          <Text position={[node.position.x, node.position.y - 0.85, node.position.z]} fontSize={0.1} color="#00ffcc">
+            [Spatial Audio: "{node.quote}"]
           </Text>
         )}
       </Float>
@@ -146,57 +124,105 @@ function NodeVisual({ node, onClick }: { node: NodeData, onClick: () => void }) 
 }
 
 // ---------------------------------------------------------
-// WEALTH FORTRESS: Expanding legacy cash value beyond the trauma
+// CENTRAL AGENCY BAR / WEALTH FORTRESS
 // ---------------------------------------------------------
-function WealthFortressVisual({ active }: { active: boolean }) {
-  const cashValueRef = useRef<THREE.Mesh>(null!);
-  const loanRef = useRef<THREE.Mesh>(null!);
+function AgencyPillar({ nodes, qiIntensity }: { nodes: NodeData[], qiIntensity: number }) {
+  const pillarRef = useRef<THREE.Mesh>(null!);
+  const wealthGroupRef = useRef<THREE.Group>(null!);
+
+  const allHealed = nodes.every(n => n.healed);
+  const activeUnhealedNode = nodes.find(n => !n.healed);
+  
+  // Is the user on the roof leap node?
+  const isRoofLeap = activeUnhealedNode?.type === 'roof';
 
   const cashScale = useRef(0);
   const loanScale = useRef(0);
 
   useFrame((state, delta) => {
-    if (!active) return;
+    const time = state.clock.elapsedTime;
     
-    // Core concept: Cash value continuously compounds even if a loan is drawn.
-    cashScale.current += delta * 0.4;
-    
-    // The policy loan is deployed for life moves.
-    if (cashScale.current > 1) {
-      loanScale.current = THREE.MathUtils.lerp(loanScale.current, cashScale.current * 0.6, 0.05);
+    if (pillarRef.current) {
+      if (allHealed) {
+        // Transform into Wealth Fortress base
+        pillarRef.current.scale.y = THREE.MathUtils.lerp(pillarRef.current.scale.y, 0, 0.05);
+        pillarRef.current.material.color.set("#66ff66");
+        pillarRef.current.material.emissive.set("#116611");
+      } else {
+        // Vertical "Agency Asserted" bar pulses with Qi Sway
+        const baseHeight = 5;
+        const pulse = Math.sin(time * 2) * 0.5 * qiIntensity;
+        pillarRef.current.scale.y = THREE.MathUtils.lerp(pillarRef.current.scale.y, baseHeight + pulse, 0.1);
+        pillarRef.current.position.y = pillarRef.current.scale.y / 2 - 1.5; // Rise from grid
+
+        // If roof leap, steepen the pitch (shear/rotate the pillar temporarily)
+        if (isRoofLeap) {
+          pillarRef.current.rotation.z = THREE.MathUtils.lerp(pillarRef.current.rotation.z, -Math.PI / 6, 0.05);
+          pillarRef.current.material.color.set("#ffff00");
+          pillarRef.current.material.emissive.set("#444400");
+        } else {
+          pillarRef.current.rotation.z = THREE.MathUtils.lerp(pillarRef.current.rotation.z, 0, 0.05);
+          // Pulse green if healing was recently triggered (qiIntensity > 1)
+          if (qiIntensity > 1.2) {
+             pillarRef.current.material.color.set("#00ffcc");
+             pillarRef.current.material.emissive.set("#00ffcc");
+          } else {
+             pillarRef.current.material.color.set("#00cccc");
+             pillarRef.current.material.emissive.set("#002222");
+          }
+        }
+      }
     }
 
-    if (cashValueRef.current) {
-      cashValueRef.current.scale.y = cashScale.current;
-      cashValueRef.current.position.y = cashScale.current / 2;
-    }
-    if (loanRef.current) {
-      loanRef.current.scale.y = loanScale.current;
-      loanRef.current.position.y = loanScale.current / 2;
+    if (allHealed && wealthGroupRef.current) {
+       cashScale.current += delta * 0.4;
+       if (cashScale.current > 1) {
+         loanScale.current = THREE.MathUtils.lerp(loanScale.current, cashScale.current * 0.6, 0.05);
+       }
+       
+       const cashBar = wealthGroupRef.current.children[0] as THREE.Mesh;
+       const loanBar = wealthGroupRef.current.children[1] as THREE.Mesh;
+       
+       if (cashBar) {
+         cashBar.scale.y = cashScale.current;
+         cashBar.position.y = cashScale.current / 2;
+       }
+       if (loanBar) {
+         loanBar.scale.y = loanScale.current;
+         loanBar.position.y = loanScale.current / 2;
+       }
     }
   });
 
-  if (!active) return null;
-
   return (
-    <group position={[5, -1, 2]}>
-      <Text position={[0, 4.0, 0]} fontSize={0.3} color="#66ff66">WEALTH FORTRESS: GENERATIONAL FLOW</Text>
-      
-      {/* HUD Labels for Financial Agency */}
-      <Text position={[0, 3.5, 0]} fontSize={0.18} color="#ffffff">Cash Value Compounding (Crediting Rate &gt; Loan Rate)</Text>
-      <Text position={[2.5, 3.5, 0]} fontSize={0.18} color="#00ccff">Policy Loan Active for Life Move</Text>
+    <group position={[0, -1, -5]}>
+       {/* Central Agency Pillar */}
+       <mesh ref={pillarRef}>
+         <cylinderGeometry args={[0.2, 0.2, 1, 16]} />
+         <meshStandardMaterial color="#00cccc" emissive="#002222" emissiveIntensity={1} />
+       </mesh>
+       
+       {!allHealed && (
+          <Text position={[0, 4, 0]} fontSize={0.2} color="#00ffcc" anchorY="bottom">
+            {isRoofLeap ? "APPROACHING ROOF PITCH" : "AGENCY ASSERTED BAR"}
+          </Text>
+       )}
 
-      {/* Base Cash Value Bar */}
-      <mesh ref={cashValueRef} position={[0, 0, 0]}>
-        <boxGeometry args={[1.2, 1, 1.2]} />
-        <meshStandardMaterial color="#66ff66" emissive="#116611" transparent opacity={0.9} />
-      </mesh>
-
-      {/* Loan Representation Bar */}
-      <mesh ref={loanRef} position={[2.5, 0, 0]}>
-        <boxGeometry args={[1, 1, 1]} />
-        <meshStandardMaterial color="#00ccff" emissive="#003366" transparent opacity={0.8} />
-      </mesh>
+       {/* Wealth Fortress Visuals */}
+       <group ref={wealthGroupRef} visible={allHealed} position={[-1, 0, 0]}>
+          <mesh position={[0, 0, 0]}>
+            <boxGeometry args={[1.2, 1, 1.2]} />
+            <meshStandardMaterial color="#66ff66" emissive="#116611" transparent opacity={0.9} />
+          </mesh>
+          <mesh position={[2.5, 0, 0]}>
+            <boxGeometry args={[1, 1, 1]} />
+            <meshStandardMaterial color="#00ccff" emissive="#003366" transparent opacity={0.8} />
+          </mesh>
+          
+          <Text position={[1.25, 4.0, 0]} fontSize={0.3} color="#66ff66">WEALTH FORTRESS: GENERATIONAL FLOW</Text>
+          <Text position={[0, 3.5, 0]} fontSize={0.16} color="#ffffff" anchorX="center">Cash Value Compounding (Crediting Rate &gt; Loan Rate)</Text>
+          <Text position={[2.5, 3.5, 0]} fontSize={0.16} color="#00ccff" anchorX="center">Policy Loan Active for Life Move</Text>
+       </group>
     </group>
   );
 }
@@ -204,7 +230,7 @@ function WealthFortressVisual({ active }: { active: boolean }) {
 // ---------------------------------------------------------
 // MAIN PATH MANAGER
 // ---------------------------------------------------------
-export default function AgencyPath({ nodes, onNodeInteract }: AgencyPathProps) {
+export default function AgencyPath({ nodes, onNodeInteract, qiIntensity }: AgencyPathProps) {
   const lineRef = useRef<any>(null);
 
   // Dynamic Curve representing the life timeline
@@ -223,16 +249,35 @@ export default function AgencyPath({ nodes, onNodeInteract }: AgencyPathProps) {
     return curve.getPoints(resolution);
   }, [curve, numHealed]);
 
+  // Roof leap Arc logic
+  const activeUnhealedNode = nodes.find(n => !n.healed);
+  const isRoofLeap = activeUnhealedNode?.type === 'roof';
+  
+  const roofLeapArc = useMemo(() => {
+    const pts = [];
+    if (isRoofLeap && activeUnhealedNode) {
+      for (let i = 0; i <= 30; i++) {
+        const t = i / 30;
+        // Parabolic arc for tuck and roll
+        pts.push(new THREE.Vector3(
+           activeUnhealedNode.position.x + t * 4, 
+           activeUnhealedNode.position.y + Math.sin(t * Math.PI) * 2, 
+           activeUnhealedNode.position.z - t * 2
+        ));
+      }
+    }
+    return pts;
+  }, [isRoofLeap, activeUnhealedNode]);
+
   useFrame((state) => {
     if (lineRef.current) {
-      // Curve breathing/flow
-      lineRef.current.material.dashOffset -= 0.01;
+      // Curve breathing/flow based on Qi
+      lineRef.current.material.dashOffset -= 0.01 * qiIntensity;
     }
   });
 
   return (
     <group>
-      {/* Main Agency Path Curve */}
       <Line
         ref={lineRef}
         points={points}
@@ -246,13 +291,17 @@ export default function AgencyPath({ nodes, onNodeInteract }: AgencyPathProps) {
         opacity={0.8}
       />
 
+      {isRoofLeap && (
+         <Line points={roofLeapArc} color="#ffff00" lineWidth={4} dashed dashScale={10} opacity={0.6} transparent />
+      )}
+
       {/* Map Nodes */}
       {nodes.map((node, i) => (
         <NodeVisual key={i} node={node} onClick={() => onNodeInteract(i)} />
       ))}
 
-      {/* Post-Resolution Wealth Engine */}
-      <WealthFortressVisual active={allHealed} />
+      {/* Central Agency Pillar & Wealth Fortress */}
+      <AgencyPillar nodes={nodes} qiIntensity={qiIntensity} />
     </group>
   );
 }

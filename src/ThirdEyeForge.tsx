@@ -24,7 +24,7 @@ export default function ThirdEyeForge() {
 
   const handlePinch = (pos: THREE.Vector3) => {
     // Find nearest node to heal when user pinches
-    const threshold = 1.5;
+    const threshold = 2.0;
     const newNodes = [...nodes];
     let healedAny = false;
     
@@ -39,7 +39,7 @@ export default function ThirdEyeForge() {
     if (healedAny) {
       setNodes(newNodes);
       setQiIntensity(2.0); // Flare up energy
-      setStatus("I Control Me → Agency Asserted, Knot Inserted. Everything flows.");
+      setStatus("SYSTEM: AGENCY ASSERTED: 'THESE THINGS DON'T DO ME — I DO THESE THINGS'");
     }
   };
 
@@ -49,7 +49,7 @@ export default function ThirdEyeForge() {
       newNodes[index].healed = true;
       setNodes(newNodes);
       setQiIntensity(2.0);
-      setStatus(`Agency Asserted: "${newNodes[index].quote}"`);
+      setStatus(`SYSTEM: AGENCY ASSERTED: '${newNodes[index].quote.toUpperCase()}'`);
     }
   };
 
@@ -78,8 +78,8 @@ export default function ThirdEyeForge() {
           <h2 className="text-sm font-mono text-[#00ffcc] mt-1 opacity-80 tracking-[0.25em]">
             LIVING ORGANISM CORE | 711+ ATOMS
           </h2>
-          <div className="mt-4 p-3 bg-black/60 border border-[#00ffcc]/30 backdrop-blur-md w-max shadow-lg shadow-[#00ffcc]/10">
-            <p className="text-xs font-mono text-[#00ffcc] opacity-90 uppercase">System: {status}</p>
+          <div className="mt-4 p-3 bg-black/40 border border-cyan-500/30 rounded backdrop-blur-sm max-w-lg shadow-lg shadow-[#00ffcc]/10">
+            <p className="text-xs font-mono text-[#00ffcc] opacity-90 uppercase leading-snug">{status}</p>
           </div>
         </div>
         
@@ -96,7 +96,7 @@ export default function ThirdEyeForge() {
       </div>
 
       {/* 3D Core */}
-      <Canvas camera={{ position: [0, 2, 6] }}>
+      <Canvas camera={{ position: [0, 2, 7] }}>
         <XR store={store}>
           <color attach="background" args={['#020204']} />
           <ambientLight intensity={0.2} />
@@ -106,7 +106,7 @@ export default function ThirdEyeForge() {
           <gridHelper args={[30, 30, 0x00ffcc, 0x002222]} position={[0, -1, 0]} />
 
           {/* Agency Path with Knot Insertion / Healing mechanics */}
-          <AgencyPath nodes={nodes} onNodeInteract={handleNodeClick} />
+          <AgencyPath nodes={nodes} onNodeInteract={handleNodeClick} qiIntensity={qiIntensity} />
           
           {/* Triple-Blend Sentient Hands using WebXR (fallback enabled), FABRIK, Qi Sway, Markley Averaging */}
           <SentientHands qiIntensity={qiIntensity} onPinch={handlePinch} />
