@@ -1,0 +1,9 @@
+{
+  "name": "Third Eye Forge",
+  "description": "A spatial MR experience for practicing 'I Control Me' agency, visualizing Qi energy flow, and turning raw trauma into resilient strength via mathematical curve evolution.",
+  "requestFramePermissions": [
+    "camera",
+    "microphone"
+  ],
+  "majorCapabilities": []
+}
