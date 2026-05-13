@@ -26,12 +26,12 @@ function NodeVisual({ node, onClick }: { node: NodeData, onClick: () => void }) 
 
   // Pre-generate particle initial velocities for the healing burst
   const particles = useMemo(() => {
-    return Array.from({ length: 40 }).map(() => ({
+    return Array.from({ length: 100 }).map(() => ({
       vel: new THREE.Vector3(
         (Math.random() - 0.5) * 2,
         Math.random() * 2,
         (Math.random() - 0.5) * 2
-      ).normalize().multiplyScalar(Math.random() * 3 + 1)
+      ).normalize().multiplyScalar(Math.random() * 6 + 2)
     }));
   }, []);
 
@@ -59,7 +59,7 @@ function NodeVisual({ node, onClick }: { node: NodeData, onClick: () => void }) 
       particlesRef.current.children.forEach((p, i) => {
         const vel = particles[i].vel;
         p.position.add(vel.clone().multiplyScalar(delta));
-        p.scale.subScalar(delta * 0.6);
+        p.scale.subScalar(delta * 0.4);
         if (p.scale.x < 0) p.scale.set(0, 0, 0); // Disappear
       });
     }
@@ -120,6 +120,40 @@ function NodeVisual({ node, onClick }: { node: NodeData, onClick: () => void }) 
         )}
       </Float>
     </group>
+  );
+}
+
+function RoofLeapAvatar({ arcPoints, active }: { arcPoints: THREE.Vector3[], active: boolean }) {
+  const meshRef = useRef<THREE.Mesh>(null!);
+  const [progress, setProgress] = useState(-1);
+
+  useEffect(() => {
+     if (active && progress === -1) {
+       setProgress(0); // Trigger the leap!
+     }
+  }, [active]);
+
+  useFrame((state, delta) => {
+    if (progress >= 0 && progress < 1) {
+       setProgress(p => Math.min(p + delta * 0.6, 1));
+    }
+    if (meshRef.current && progress >= 0 && progress < 1 && arcPoints.length > 0) {
+       const idx = progress * (arcPoints.length - 1);
+       const i0 = Math.floor(idx);
+       const i1 = Math.min(i0 + 1, arcPoints.length - 1);
+       const t = idx - i0;
+       meshRef.current.position.lerpVectors(arcPoints[i0], arcPoints[i1], t);
+       meshRef.current.rotation.x -= delta * 20; // Fast Forward Tuck and roll
+    }
+  });
+
+  if (progress < 0 || progress >= 1) return null;
+
+  return (
+    <mesh ref={meshRef}>
+      <octahedronGeometry args={[0.3, 2]} />
+      <meshStandardMaterial color="#ffff00" emissive="#aa8800" wireframe />
+    </mesh>
   );
 }
 
@@ -250,24 +284,25 @@ export default function AgencyPath({ nodes, onNodeInteract, qiIntensity }: Agenc
   }, [curve, numHealed]);
 
   // Roof leap Arc logic
-  const activeUnhealedNode = nodes.find(n => !n.healed);
-  const isRoofLeap = activeUnhealedNode?.type === 'roof';
+  const roofNode = nodes.find(n => n.type === 'roof');
+  const isRoofLeapActive = roofNode && !roofNode.healed;
+  const isRoofLeapHealed = roofNode && roofNode.healed;
   
   const roofLeapArc = useMemo(() => {
     const pts = [];
-    if (isRoofLeap && activeUnhealedNode) {
+    if (roofNode) {
       for (let i = 0; i <= 30; i++) {
         const t = i / 30;
         // Parabolic arc for tuck and roll
         pts.push(new THREE.Vector3(
-           activeUnhealedNode.position.x + t * 4, 
-           activeUnhealedNode.position.y + Math.sin(t * Math.PI) * 2, 
-           activeUnhealedNode.position.z - t * 2
+           roofNode.position.x + t * 4, 
+           roofNode.position.y + Math.sin(t * Math.PI) * 2.5, 
+           roofNode.position.z - t * 2
         ));
       }
     }
     return pts;
-  }, [isRoofLeap, activeUnhealedNode]);
+  }, [roofNode]);
 
   useFrame((state) => {
     if (lineRef.current) {
@@ -291,9 +326,12 @@ export default function AgencyPath({ nodes, onNodeInteract, qiIntensity }: Agenc
         opacity={0.8}
       />
 
-      {isRoofLeap && (
+      {isRoofLeapActive && (
          <Line points={roofLeapArc} color="#ffff00" lineWidth={4} dashed dashScale={10} opacity={0.6} transparent />
       )}
+      
+      {/* Tuck and Roll Avatar Animation */}
+      {roofNode && <RoofLeapAvatar arcPoints={roofLeapArc} active={!!isRoofLeapHealed} />}
 
       {/* Map Nodes */}
       {nodes.map((node, i) => (

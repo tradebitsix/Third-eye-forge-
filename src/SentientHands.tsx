@@ -33,15 +33,77 @@ export default function SentientHands({
     let rightQuat = new THREE.Quaternion().setFromEuler(new THREE.Euler(0, -Math.PI/4, 0));
 
     const session = gl.xr?.getSession();
+    let pinchDetectedThisFrame = false;
+
     if (session) {
       // If active XR, extract raw 6DoF tracking
       const c0 = gl.xr.getController(0);
       const c1 = gl.xr.getController(1);
+      
+      const hand0 = gl.xr.getHand(0);
+      const hand1 = gl.xr.getHand(1);
+
       if (c0?.visible && c1?.visible) {
          leftPos.copy(c0.position);
          rightPos.copy(c1.position);
          leftQuat.copy(c0.quaternion);
          rightQuat.copy(c1.quaternion);
+      } else {
+        // Fallback if hands are overriding controllers
+        if (hand0?.visible) {
+          leftPos.addVectors(hand0.position, new THREE.Vector3(0, 0, 0));
+          leftQuat.copy(hand0.quaternion);
+        }
+        if (hand1?.visible) {
+          rightPos.addVectors(hand1.position, new THREE.Vector3(0, 0, 0));
+          rightQuat.copy(hand1.quaternion);
+        }
+      }
+
+      // WebXR Hand Joint Pinch Detection (thumb-tip is 4, index-tip is 9)
+      [hand0, hand1].forEach((hand) => {
+        if (hand && hand.visible && hand.children.length >= 25) {
+          const thumbTip = hand.children[4];
+          const indexTip = hand.children[9];
+          
+          if (thumbTip && indexTip) {
+            const tPos = new THREE.Vector3().setFromMatrixPosition(thumbTip.matrixWorld);
+            const iPos = new THREE.Vector3().setFromMatrixPosition(indexTip.matrixWorld);
+            
+            // "I Control Me" Pinch Threshold
+            if (tPos.distanceTo(iPos) < 0.05) {
+               pinchDetectedThisFrame = true;
+               if (!pinchTriggered.current) {
+                 onPinch(tPos.clone().lerp(iPos, 0.5));
+               }
+            }
+          }
+        }
+      });
+
+      // Fallback for VR Controllers (using trigger)
+      if (!pinchDetectedThisFrame && session.inputSources) {
+        session.inputSources.forEach((source) => {
+           if (source.gamepad) {
+              const trigger = source.gamepad.buttons[0]; // Trigger button
+              if (trigger && trigger.pressed) {
+                 pinchDetectedThisFrame = true;
+                 if (!pinchTriggered.current) {
+                    const idx = source.handedness === 'left' ? 0 : 1;
+                    const ctrl = gl.xr.getController(idx);
+                    if (ctrl && ctrl.visible) {
+                      onPinch(new THREE.Vector3().setFromMatrixPosition(ctrl.matrixWorld));
+                    }
+                 }
+              }
+           }
+        });
+      }
+
+      if (pinchDetectedThisFrame) {
+        pinchTriggered.current = true;
+      } else {
+        pinchTriggered.current = false;
       }
     } else {
        // Graceful Desktop Fallback
