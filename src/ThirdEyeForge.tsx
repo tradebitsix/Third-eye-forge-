@@ -1,7 +1,8 @@
-import React, { useState, useEffect } from 'react';
-import { Canvas } from '@react-three/fiber';
-import { OrbitControls, Environment } from '@react-three/drei';
+import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
+import { Canvas, useFrame, useThree } from '@react-three/fiber';
+import { OrbitControls, Environment, Text } from '@react-three/drei';
 import { XR, createXRStore } from '@react-three/xr';
+import { EffectComposer, Bloom } from '@react-three/postprocessing';
 import * as THREE from 'three';
 
 import AgencyPath, { NodeData } from './AgencyPath';
@@ -10,8 +11,86 @@ import SentientHands from './SentientHands';
 const INITIAL_NODES: NodeData[] = [
   { position: new THREE.Vector3(-4, 0, -2), label: "Escape Loop (Shed)", type: 'escape', quote: "These things don't do me — I do these things.", healed: false },
   { position: new THREE.Vector3(0, 1.5, -4), label: "Roof Edge Reflex", type: 'roof', quote: "Fearless flow. Calculate. Tuck. Roll.", healed: false },
-  { position: new THREE.Vector3(4, 0, -2), label: "Single-Dad Rebuild", type: 'rebuild', quote: "Pressure Builds Diamonds.", healed: false }
+  { position: new THREE.Vector3(4, 1.0, -3), label: "Uncle's 75 Stitches", type: 'trauma', quote: "Trauma to Memory. Mind stays strong and clear.", healed: false },
+  { position: new THREE.Vector3(7, 0, -2), label: "Single-Dad Rebuild", type: 'rebuild', quote: "Pressure Builds Diamonds.", healed: false }
 ];
+
+import { GazeDwellManager } from './GazeDwellManager';
+
+function GazeIntegration({ nodes, onHeal }: { nodes: NodeData[], onHeal: (index: number) => void }) {
+  const { camera, scene, gl } = useThree();
+  const dwellManagerRef = useRef<GazeDwellManager | null>(null);
+  const interactiveRef = useRef<THREE.Object3D[]>([]);
+
+  useEffect(() => {
+    const manager = new GazeDwellManager(scene, camera, (target) => {
+      if (target.userData.index !== undefined) {
+        onHeal(target.userData.index);
+      }
+    });
+    dwellManagerRef.current = manager;
+    return () => manager.dispose();
+  }, [scene, camera, onHeal]);
+
+  useEffect(() => {
+    if (dwellManagerRef.current) {
+        dwellManagerRef.current.setInteractiveObjects(interactiveRef.current.filter(Boolean));
+    }
+  }, [nodes]);
+
+  useFrame((state, delta) => {
+    const isXR = gl.xr.isPresenting;
+    if (dwellManagerRef.current) {
+      dwellManagerRef.current.update(camera, delta, isXR);
+    }
+  });
+
+  return (
+    <group>
+      {nodes.map((node, i) => (
+        !node.healed && (
+            <mesh 
+                key={`trigger-${i}`} 
+                position={node.position} 
+                visible={false} 
+                userData={{ index: i, type: node.type }}
+                ref={(el) => { if(el) interactiveRef.current[i] = el; }}
+            >
+                <sphereGeometry args={[0.6]} />
+            </mesh>
+        )
+      ))}
+    </group>
+  );
+}
+
+// Subtle environment particles
+function AmbientParticles() {
+  const pointsRef = useRef<THREE.Points>(null!);
+  const particles = useMemo(() => {
+    const geometry = new THREE.BufferGeometry();
+    const count = 300;
+    const positions = new Float32Array(count * 3);
+    for(let i=0; i<count*3; i++) {
+       positions[i] = (Math.random() - 0.5) * 30;
+    }
+    geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+    return geometry;
+  }, []);
+
+  useFrame((state) => {
+    if (pointsRef.current) {
+      pointsRef.current.rotation.y += 0.0005;
+      pointsRef.current.position.y = Math.sin(state.clock.elapsedTime * 0.2) * 2;
+    }
+  });
+
+  return (
+    <points ref={pointsRef} geometry={particles}>
+      <pointsMaterial size={0.05} color="#00ffff" transparent opacity={0.3} sizeAttenuation depthWrite={false} toneMapped={false} />
+    </points>
+  );
+}
 
 const store = createXRStore({
   hand: true, // enables generic-hand
@@ -21,36 +100,36 @@ export default function ThirdEyeForge() {
   const [nodes, setNodes] = useState<NodeData[]>(INITIAL_NODES);
   const [qiIntensity, setQiIntensity] = useState(0.5);
   const [status, setStatus] = useState("Everything is living. Everything flows.");
+  const [flashQuote, setFlashQuote] = useState<string | null>(null);
+
+  const triggerHeal = useCallback((index: number) => {
+    setNodes(prev => {
+        const newNodes = [...prev];
+        if (!newNodes[index].healed) {
+            newNodes[index].healed = true;
+            setQiIntensity(4.0); // MASSIVE flare up energy for visual flash
+            setStatus(`SYSTEM: AGENCY ASSERTED: '${newNodes[index].quote.toUpperCase()}'`);
+            setFlashQuote(newNodes[index].quote.toUpperCase());
+            setTimeout(() => setFlashQuote(null), 4000);
+        }
+        return newNodes;
+    });
+  }, []);
 
   const handlePinch = (pos: THREE.Vector3) => {
     // Find nearest node to heal when user pinches
     const threshold = 2.0;
-    const newNodes = [...nodes];
-    let healedAny = false;
     
-    for (let i = 0; i < newNodes.length; i++) {
-      if (!newNodes[i].healed && pos.distanceTo(newNodes[i].position) < threshold) {
-        newNodes[i].healed = true;
-        healedAny = true;
+    for (let i = 0; i < nodes.length; i++) {
+      if (!nodes[i].healed && pos.distanceTo(nodes[i].position) < threshold) {
+        triggerHeal(i);
         break;
       }
-    }
-    
-    if (healedAny) {
-      setNodes(newNodes);
-      setQiIntensity(2.0); // Flare up energy
-      setStatus("SYSTEM: AGENCY ASSERTED: 'THESE THINGS DON'T DO ME — I DO THESE THINGS'");
     }
   };
 
   const handleNodeClick = (index: number) => {
-    const newNodes = [...nodes];
-    if (!newNodes[index].healed) {
-      newNodes[index].healed = true;
-      setNodes(newNodes);
-      setQiIntensity(2.0);
-      setStatus(`SYSTEM: AGENCY ASSERTED: '${newNodes[index].quote.toUpperCase()}'`);
-    }
+    triggerHeal(index);
   };
 
   // Decay Qi Intensity like water settling back to baseline
@@ -61,9 +140,14 @@ export default function ThirdEyeForge() {
     return () => clearInterval(interval);
   }, []);
 
-  const enterVR = () => {
+  const enterVR = async () => {
     setStatus("Initiating WebXR Session...");
-    store.enterVR();
+    try {
+      await store.enterVR();
+    } catch (err: any) {
+      console.error(err);
+      setStatus(`XR Error: ${err.message || 'Check if browser supports WebXR or open in a new tab.'}`);
+    }
   };
 
   return (
@@ -98,12 +182,28 @@ export default function ThirdEyeForge() {
       {/* 3D Core */}
       <Canvas camera={{ position: [0, 2, 7] }}>
         <XR store={store}>
-          <color attach="background" args={['#020204']} />
+          <color attach="background" args={['#010102']} />
           <ambientLight intensity={0.2} />
-          <pointLight position={[0, 5, 0]} intensity={1.5} color="#00ffcc" />
+          
+          {/* Flash light when healing triggers */}
+          <pointLight position={[0, 4, 0]} intensity={qiIntensity > 2 ? 8 : 1.5} color={qiIntensity > 2 ? "#ffffff" : "#00ffcc"} />
+
+          <EffectComposer>
+            <Bloom luminanceThreshold={0.2} luminanceSmoothing={0.9} mipmapBlur intensity={1.5 + qiIntensity * 0.5} />
+          </EffectComposer>
+
+          {/* Flash Quote */}
+          {flashQuote && (
+            <Text position={[0, 5, -2]} fontSize={0.6} color="#ffffff" anchorX="center" anchorY="middle">
+              {flashQuote}
+            </Text>
+          )}
+
+          <GazeIntegration nodes={nodes} onHeal={triggerHeal} />
+          <AmbientParticles />
           
           {/* Subtle Cyber Grid Floor */}
-          <gridHelper args={[30, 30, 0x00ffcc, 0x002222]} position={[0, -1, 0]} />
+          <gridHelper args={[40, 40, 0x00ffcc, 0x002222]} position={[0, -1, 0]} />
 
           {/* Agency Path with Knot Insertion / Healing mechanics */}
           <AgencyPath nodes={nodes} onNodeInteract={handleNodeClick} qiIntensity={qiIntensity} />

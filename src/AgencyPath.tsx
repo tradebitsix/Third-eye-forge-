@@ -7,7 +7,7 @@ export interface NodeData {
   position: THREE.Vector3;
   label: string;
   quote: string;
-  type: 'escape' | 'roof' | 'rebuild';
+  type: 'escape' | 'roof' | 'rebuild' | 'trauma';
   healed: boolean;
 }
 
@@ -24,9 +24,17 @@ function NodeVisual({ node, onClick }: { node: NodeData, onClick: () => void }) 
   const meshRef = useRef<THREE.Mesh>(null!);
   const particlesRef = useRef<THREE.Group>(null!);
 
+  // Stitches for unhealed trauma nodes (like the 75 stitches)
+  const stitches = useMemo(() => {
+    return Array.from({ length: 15 }).map(() => ({
+      pos: new THREE.Vector3((Math.random() - 0.5) * 0.35, (Math.random() - 0.5) * 0.35, (Math.random() - 0.5) * 0.35),
+      rot: new THREE.Euler(Math.random() * Math.PI, Math.random() * Math.PI, Math.random() * Math.PI)
+    }));
+  }, []);
+
   // Pre-generate particle initial velocities for the healing burst
   const particles = useMemo(() => {
-    return Array.from({ length: 100 }).map(() => ({
+    return Array.from({ length: 150 }).map(() => ({
       vel: new THREE.Vector3(
         (Math.random() - 0.5) * 2,
         Math.random() * 2,
@@ -35,7 +43,11 @@ function NodeVisual({ node, onClick }: { node: NodeData, onClick: () => void }) 
     }));
   }, []);
 
+  const timeOffset = useMemo(() => Math.random() * 10, []);
+
   useFrame((state, delta) => {
+    const t = state.clock.elapsedTime + timeOffset;
+
     if (meshRef.current) {
       if (!node.healed) {
         // BATTLE WOUND: Unhealed trauma is a cracked, chaotic, jittery mesh
@@ -49,8 +61,10 @@ function NodeVisual({ node, onClick }: { node: NodeData, onClick: () => void }) 
       } else {
         // HEALED: Smooth rotation, centers beautifully into alignment
         meshRef.current.position.lerp(node.position, 0.1);
-        meshRef.current.rotation.y += delta * 1.5;
-        meshRef.current.rotation.x += delta * 0.5;
+        meshRef.current.rotation.y += delta * 0.5;
+        meshRef.current.rotation.x += delta * 0.2;
+        const scale = 1 + Math.sin(t * 3) * 0.05;
+        meshRef.current.scale.setScalar(scale);
       }
     }
 
@@ -74,16 +88,25 @@ function NodeVisual({ node, onClick }: { node: NodeData, onClick: () => void }) 
         onPointerOut={() => (document.body.style.cursor = 'auto')}
       >
         {node.healed ? (
-          <icosahedronGeometry args={[0.35, 4]} /> // Smooth high-poly curve
+          <icosahedronGeometry args={[0.35, 4]} /> // Smooth high-poly curve for strong memory
         ) : (
-          <icosahedronGeometry args={[0.3, 0]} /> // Jagged low-poly wound
+          <icosahedronGeometry args={[0.3, 0]} /> // Jagged low-poly wound for trauma
         )}
         <meshStandardMaterial
           color={node.healed ? "#00ffcc" : "#ff0033"}
           wireframe={!node.healed}
-          emissive={node.healed ? "#00ffcc" : "#330000"}
-          emissiveIntensity={node.healed ? 0.8 : 0.6}
+          emissive={node.healed ? "#00ffcc" : "#ff0000"}
+          emissiveIntensity={node.healed ? 1.5 : 0.8}
+          toneMapped={false}
         />
+        
+        {/* Render Stitches if not healed */}
+        {!node.healed && stitches.map((s, i) => (
+          <mesh key={i} position={s.pos} rotation={s.rot}>
+            <cylinderGeometry args={[0.015, 0.015, 0.15]} />
+            <meshBasicMaterial color="#ff3333" toneMapped={false} />
+          </mesh>
+        ))}
       </mesh>
 
       {/* Particle Healing Burst */}
@@ -92,7 +115,7 @@ function NodeVisual({ node, onClick }: { node: NodeData, onClick: () => void }) 
           {particles.map((_, pi) => (
             <mesh key={pi}>
               <boxGeometry args={[0.08, 0.08, 0.08]} />
-              <meshBasicMaterial color="#00ffff" transparent opacity={0.8} />
+              <meshBasicMaterial color="#00ffcc" transparent opacity={0.9} toneMapped={false} />
             </mesh>
           ))}
         </group>
@@ -108,14 +131,13 @@ function NodeVisual({ node, onClick }: { node: NodeData, onClick: () => void }) 
           position={[node.position.x, node.position.y - 0.6, node.position.z]}
           fontSize={0.16}
           color={node.healed ? "#ffffff" : "#aa3333"}
-          opacity={node.healed ? 1 : 0.8}
-          transparent
+          fillOpacity={node.healed ? 1 : 0.8}
         >
           {node.quote}
         </Text>
         {node.healed && (
-          <Text position={[node.position.x, node.position.y - 0.85, node.position.z]} fontSize={0.1} color="#00ffcc">
-            [Spatial Audio: "{node.quote}"]
+          <Text position={[node.position.x, node.position.y - 0.85, node.position.z]} fontSize={0.12} color="#00ffcc">
+            [Stable Memory: Clear & Strong]
           </Text>
         )}
       </Float>
@@ -152,7 +174,7 @@ function RoofLeapAvatar({ arcPoints, active }: { arcPoints: THREE.Vector3[], act
   return (
     <mesh ref={meshRef}>
       <octahedronGeometry args={[0.3, 2]} />
-      <meshStandardMaterial color="#ffff00" emissive="#aa8800" wireframe />
+      <meshStandardMaterial color="#ffff00" emissive="#aa8800" emissiveIntensity={2} wireframe toneMapped={false} />
     </mesh>
   );
 }
@@ -180,8 +202,8 @@ function AgencyPillar({ nodes, qiIntensity }: { nodes: NodeData[], qiIntensity: 
       if (allHealed) {
         // Transform into Wealth Fortress base
         pillarRef.current.scale.y = THREE.MathUtils.lerp(pillarRef.current.scale.y, 0, 0.05);
-        pillarRef.current.material.color.set("#66ff66");
-        pillarRef.current.material.emissive.set("#116611");
+        (pillarRef.current.material as THREE.MeshStandardMaterial).color.set("#66ff66");
+        (pillarRef.current.material as THREE.MeshStandardMaterial).emissive.set("#116611");
       } else {
         // Vertical "Agency Asserted" bar pulses with Qi Sway
         const baseHeight = 5;
@@ -192,17 +214,17 @@ function AgencyPillar({ nodes, qiIntensity }: { nodes: NodeData[], qiIntensity: 
         // If roof leap, steepen the pitch (shear/rotate the pillar temporarily)
         if (isRoofLeap) {
           pillarRef.current.rotation.z = THREE.MathUtils.lerp(pillarRef.current.rotation.z, -Math.PI / 6, 0.05);
-          pillarRef.current.material.color.set("#ffff00");
-          pillarRef.current.material.emissive.set("#444400");
+          (pillarRef.current.material as THREE.MeshStandardMaterial).color.set("#ffff00");
+          (pillarRef.current.material as THREE.MeshStandardMaterial).emissive.set("#444400");
         } else {
           pillarRef.current.rotation.z = THREE.MathUtils.lerp(pillarRef.current.rotation.z, 0, 0.05);
           // Pulse green if healing was recently triggered (qiIntensity > 1)
           if (qiIntensity > 1.2) {
-             pillarRef.current.material.color.set("#00ffcc");
-             pillarRef.current.material.emissive.set("#00ffcc");
+             (pillarRef.current.material as THREE.MeshStandardMaterial).color.set("#00ffcc");
+             (pillarRef.current.material as THREE.MeshStandardMaterial).emissive.set("#00ffcc");
           } else {
-             pillarRef.current.material.color.set("#00cccc");
-             pillarRef.current.material.emissive.set("#002222");
+             (pillarRef.current.material as THREE.MeshStandardMaterial).color.set("#00cccc");
+             (pillarRef.current.material as THREE.MeshStandardMaterial).emissive.set("#002222");
           }
         }
       }

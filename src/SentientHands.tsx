@@ -14,6 +14,16 @@ export default function SentientHands({
   const { gl } = useThree();
   const averager = useMemo(() => new MarkleyQuaternionAverager(), []);
 
+  // Initialize XR controllers once to avoid XRSpace/XRFrame mismatches across sessions
+  const xrControllers = useMemo(() => {
+    return {
+      c0: gl.xr.getController(0),
+      c1: gl.xr.getController(1),
+      hand0: gl.xr.getHand(0),
+      hand1: gl.xr.getHand(1)
+    };
+  }, [gl]);
+
   const leftHandRef = useRef<THREE.Group>(null);
   const rightHandRef = useRef<THREE.Group>(null);
   const qiBallRef = useRef<THREE.Mesh>(null);
@@ -32,16 +42,13 @@ export default function SentientHands({
     let leftQuat = new THREE.Quaternion().setFromEuler(new THREE.Euler(0, Math.PI/4, 0));
     let rightQuat = new THREE.Quaternion().setFromEuler(new THREE.Euler(0, -Math.PI/4, 0));
 
-    const session = gl.xr?.getSession();
     let pinchDetectedThisFrame = false;
 
-    if (session) {
-      // If active XR, extract raw 6DoF tracking
-      const c0 = gl.xr.getController(0);
-      const c1 = gl.xr.getController(1);
-      
-      const hand0 = gl.xr.getHand(0);
-      const hand1 = gl.xr.getHand(1);
+    if (gl.xr && gl.xr.isPresenting) {
+      const session = gl.xr.getSession();
+      if (session) {
+        try {
+          const { c0, c1, hand0, hand1 } = xrControllers;
 
       if (c0?.visible && c1?.visible) {
          leftPos.copy(c0.position);
@@ -104,6 +111,10 @@ export default function SentientHands({
         pinchTriggered.current = true;
       } else {
         pinchTriggered.current = false;
+      }
+        } catch(e) {
+          console.warn("XR Tracking error", e);
+        }
       }
     } else {
        // Graceful Desktop Fallback
