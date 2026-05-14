@@ -1,5 +1,5 @@
 import React, { useRef, useMemo, useState, useEffect } from 'react';
-import { useFrame } from '@react-three/fiber';
+import { useFrame, useThree } from '@react-three/fiber';
 import { Text, Line, Float } from '@react-three/drei';
 import * as THREE from 'three';
 
@@ -14,15 +14,21 @@ export interface NodeData {
 interface AgencyPathProps {
   nodes: NodeData[];
   onNodeInteract: (index: number) => void;
+  onNodeDrop?: (index: number, pos: THREE.Vector3) => void;
   qiIntensity: number;
 }
 
 // ---------------------------------------------------------
 // NODE VISUAL: Represents life trauma becoming healed agency
 // ---------------------------------------------------------
-function NodeVisual({ node, onClick }: { node: NodeData, onClick: () => void }) {
+function NodeVisual({ node, index, onClick, onDrop }: { node: NodeData, index: number, onClick: () => void, onDrop: (idx: number, pos: THREE.Vector3) => void }) {
   const meshRef = useRef<THREE.Mesh>(null!);
   const particlesRef = useRef<THREE.Group>(null!);
+  const { controls } = useThree();
+
+  const [isDragging, setIsDragging] = useState(false);
+  const dragPlane = useMemo(() => new THREE.Plane(), []);
+  const targetVec = useMemo(() => new THREE.Vector3(), []);
 
   // Stitches for unhealed trauma nodes (like the 75 stitches)
   const stitches = useMemo(() => {
@@ -50,14 +56,20 @@ function NodeVisual({ node, onClick }: { node: NodeData, onClick: () => void }) 
 
     if (meshRef.current) {
       if (!node.healed) {
-        // BATTLE WOUND: Unhealed trauma is a cracked, chaotic, jittery mesh
-        meshRef.current.rotation.x += Math.random() * 0.3;
-        meshRef.current.rotation.y += Math.random() * 0.3;
-        meshRef.current.position.set(
-          node.position.x + (Math.random() - 0.5) * 0.15,
-          node.position.y + (Math.random() - 0.5) * 0.15,
-          node.position.z + (Math.random() - 0.5) * 0.15
-        );
+        if (!isDragging) {
+          // BATTLE WOUND: Unhealed trauma is a cracked, chaotic, jittery mesh
+          meshRef.current.rotation.x += Math.random() * 0.3;
+          meshRef.current.rotation.y += Math.random() * 0.3;
+          meshRef.current.position.set(
+            node.position.x + (Math.random() - 0.5) * 0.15,
+            node.position.y + (Math.random() - 0.5) * 0.15,
+            node.position.z + (Math.random() - 0.5) * 0.15
+          );
+        } else {
+          // Dragging state
+          meshRef.current.rotation.x += delta;
+          meshRef.current.rotation.y += delta;
+        }
       } else {
         // HEALED: Smooth rotation, centers beautifully into alignment
         meshRef.current.position.lerp(node.position, 0.1);
@@ -79,12 +91,52 @@ function NodeVisual({ node, onClick }: { node: NodeData, onClick: () => void }) 
     }
   });
 
+  const bind = {
+    onPointerDown: (e: any) => {
+      e.stopPropagation();
+      if (!node.healed) {
+         setIsDragging(true);
+         if (controls) (controls as any).enabled = false;
+         // capture pointer for reliable dragging
+         if (e.target && e.target.setPointerCapture) {
+            e.target.setPointerCapture(e.pointerId);
+         }
+      }
+    },
+    onPointerUp: (e: any) => {
+      e.stopPropagation();
+      if (isDragging) {
+         setIsDragging(false);
+         if (controls) (controls as any).enabled = true;
+         if (e.target && e.target.releasePointerCapture) {
+             e.target.releasePointerCapture(e.pointerId);
+         }
+         onDrop(index, meshRef.current.position.clone());
+      } else {
+         onClick(); 
+      }
+    },
+    onPointerMove: (e: any) => {
+      if (isDragging) {
+         e.stopPropagation();
+         // Construct a plane facing the camera, passing through the original node Z
+         dragPlane.setFromNormalAndCoplanarPoint(
+             e.camera.getWorldDirection(new THREE.Vector3()).negate(), 
+             new THREE.Vector3(0,0,node.position.z)
+         );
+         if (e.ray.intersectPlane(dragPlane, targetVec)) {
+             meshRef.current.position.copy(targetVec);
+         }
+      }
+    }
+  };
+
   return (
     <group>
       <mesh
         ref={meshRef}
-        onClick={onClick}
-        onPointerOver={() => (document.body.style.cursor = 'pointer')}
+        {...bind}
+        onPointerOver={() => (document.body.style.cursor = isDragging ? 'grabbing' : 'grab')}
         onPointerOut={() => (document.body.style.cursor = 'auto')}
       >
         {node.healed ? (
@@ -260,7 +312,7 @@ function AgencyPillar({ nodes, qiIntensity }: { nodes: NodeData[], qiIntensity: 
        
        {!allHealed && (
           <Text position={[0, 4, 0]} fontSize={0.2} color="#00ffcc" anchorY="bottom">
-            {isRoofLeap ? "APPROACHING ROOF PITCH" : "AGENCY ASSERTED BAR"}
+            || CENTRAL FORGE ||
           </Text>
        )}
 
@@ -286,7 +338,7 @@ function AgencyPillar({ nodes, qiIntensity }: { nodes: NodeData[], qiIntensity: 
 // ---------------------------------------------------------
 // MAIN PATH MANAGER
 // ---------------------------------------------------------
-export default function AgencyPath({ nodes, onNodeInteract, qiIntensity }: AgencyPathProps) {
+export default function AgencyPath({ nodes, onNodeInteract, onNodeDrop, qiIntensity }: AgencyPathProps) {
   const lineRef = useRef<any>(null);
 
   // Dynamic Curve representing the life timeline
@@ -357,7 +409,7 @@ export default function AgencyPath({ nodes, onNodeInteract, qiIntensity }: Agenc
 
       {/* Map Nodes */}
       {nodes.map((node, i) => (
-        <NodeVisual key={i} node={node} onClick={() => onNodeInteract(i)} />
+        <NodeVisual key={i} node={node} index={i} onClick={() => onNodeInteract(i)} onDrop={onNodeDrop || (() => {})} />
       ))}
 
       {/* Central Agency Pillar & Wealth Fortress */}

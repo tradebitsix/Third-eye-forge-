@@ -4,15 +4,16 @@ import { OrbitControls, Environment, Text } from '@react-three/drei';
 import { XR, createXRStore } from '@react-three/xr';
 import { EffectComposer, Bloom } from '@react-three/postprocessing';
 import * as THREE from 'three';
+import { GoogleGenAI } from '@google/genai';
 
 import AgencyPath, { NodeData } from './AgencyPath';
 import SentientHands from './SentientHands';
 
 const INITIAL_NODES: NodeData[] = [
-  { position: new THREE.Vector3(-4, 0, -2), label: "Escape Loop (Shed)", type: 'escape', quote: "These things don't do me — I do these things.", healed: false },
-  { position: new THREE.Vector3(0, 1.5, -4), label: "Roof Edge Reflex", type: 'roof', quote: "Fearless flow. Calculate. Tuck. Roll.", healed: false },
-  { position: new THREE.Vector3(4, 1.0, -3), label: "Uncle's 75 Stitches", type: 'trauma', quote: "Trauma to Memory. Mind stays strong and clear.", healed: false },
-  { position: new THREE.Vector3(7, 0, -2), label: "Single-Dad Rebuild", type: 'rebuild', quote: "Pressure Builds Diamonds.", healed: false }
+  { position: new THREE.Vector3(-4, 0, -2), label: "Escape Loop (Shed)", type: 'escape', quote: "These things don't do me — I do these things.", healed: true },
+  { position: new THREE.Vector3(0, 1.5, -4), label: "Roof Edge Reflex", type: 'roof', quote: "Fearless flow. Calculate. Tuck. Roll.", healed: true },
+  { position: new THREE.Vector3(4, 1.0, -3), label: "Uncle's 75 Stitches", type: 'trauma', quote: "Trauma to Memory. Mind stays strong and clear.", healed: true },
+  { position: new THREE.Vector3(7, 0, -2), label: "Single-Dad Rebuild", type: 'rebuild', quote: "Pressure Builds Diamonds.", healed: true }
 ];
 
 import { GazeDwellManager } from './GazeDwellManager';
@@ -99,22 +100,99 @@ const store = createXRStore({
 export default function ThirdEyeForge() {
   const [nodes, setNodes] = useState<NodeData[]>(INITIAL_NODES);
   const [qiIntensity, setQiIntensity] = useState(0.5);
-  const [status, setStatus] = useState("Everything is living. Everything flows.");
+  const [status, setStatus] = useState("DRAG RAW BATTLE WOUNDS TO THE CENTRAL FORGE. TRI-POLYMER BINDING ENGAGED.");
   const [flashQuote, setFlashQuote] = useState<string | null>(null);
+  const [inputText, setInputText] = useState("");
+  const [isSynthesizing, setIsSynthesizing] = useState(false);
 
-  const triggerHeal = useCallback((index: number) => {
-    setNodes(prev => {
-        const newNodes = [...prev];
-        if (!newNodes[index].healed) {
-            newNodes[index].healed = true;
-            setQiIntensity(4.0); // MASSIVE flare up energy for visual flash
-            setStatus(`SYSTEM: AGENCY ASSERTED: '${newNodes[index].quote.toUpperCase()}'`);
-            setFlashQuote(newNodes[index].quote.toUpperCase());
-            setTimeout(() => setFlashQuote(null), 4000);
+  const handleCreateMemory = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!inputText.trim()) return;
+    setNodes(prev => [
+      ...prev,
+      {
+        position: new THREE.Vector3((Math.random() - 0.5) * 6, Math.random() * 2 + 1, (Math.random() - 0.5) * 6),
+        label: "Raw Memory",
+        type: 'trauma',
+        quote: inputText,
+        healed: false
+      }
+    ]);
+    setInputText("");
+    setStatus("NEW RAW MEMORY DETECTED. DRAG ATOM TO FORGE TO SYNTHESIZE AGENCY.");
+  };
+
+  const triggerHeal = useCallback(async (index: number) => {
+    if (isSynthesizing) return;
+    setIsSynthesizing(true);
+    setStatus("AI SYNTHESIZING: EXTRACTING AGENCY FROM TRAUMA...");
+
+    try {
+      const nodeToHeal = nodes[index];
+      let finalQuote = nodeToHeal.quote;
+
+      // Ensure API key exists in env when running locally, in AI Studio it is provided
+      if (process.env.GEMINI_API_KEY) {
+        const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
+        const response = await ai.models.generateContent({
+           model: "gemini-3.1-flash-lite",
+           contents: `You are the core of a Cognitive Companion. Take this user's raw, unhealed memory/trauma and perform a 'Pinky Scar' reframing. Find the lesson, the agency, and the power in it. 
+           Provide ONLY a short, punchy 1-2 sentence "Agency Asserted" quote summarizing their new power. Do not wrap in quotes or add extra intro text.
+           Raw Memory: "${nodeToHeal.quote}"`
+        });
+        if (response.text) {
+          finalQuote = response.text.trim();
         }
+      } else {
+        // Fallback if no key (e.g. dev environment missing var)
+        finalQuote = "Agency asserted. Wisdom forged from chaos.";
+      }
+
+      setNodes(prev => {
+          const newNodes = [...prev];
+          if (!newNodes[index].healed) {
+              newNodes[index].healed = true;
+              newNodes[index].quote = finalQuote.toUpperCase();
+              newNodes[index].label = "Synthesized Core";
+
+              setQiIntensity(5.0); // MASSIVE flare up energy for visual flash
+              setStatus(`SYSTEM: AGENCY ASSERTED: '${finalQuote.toUpperCase()}'`);
+              setFlashQuote(finalQuote.toUpperCase());
+              setTimeout(() => setFlashQuote(null), 4000);
+          }
+          return newNodes;
+      });
+    } catch (e: any) {
+      console.error(e);
+      setStatus(`SYNTHESIS FAILED: USING FALLBACK. ${e.message}`);
+      setNodes(prev => {
+          const newNodes = [...prev];
+          newNodes[index].healed = true;
+          newNodes[index].quote = "AGENCY ASSERTED (FALLBACK)";
+          setQiIntensity(3.0);
+          return newNodes;
+      });
+    } finally {
+      setIsSynthesizing(false);
+    }
+  }, [nodes, isSynthesizing]);
+
+  const handleNodeDrop = useCallback((index: number, pos: THREE.Vector3) => {
+    const forgePos = new THREE.Vector3(0, -1, -5);
+    const dist = pos.distanceTo(forgePos);
+    
+    if (dist < 2.5) { // Threshold for Forge Tri-Polymer Binding
+      triggerHeal(index);
+    } else {
+      // Update its position so it actually drops where dragged
+      setNodes(prev => {
+        const newNodes = [...prev];
+        newNodes[index].position.copy(pos);
         return newNodes;
-    });
-  }, []);
+      });
+      setStatus(`ATOM DROP OFFTARGET. DRAG RELEVANT RAW MEMORY INTO CENTRAL FORGE.`);
+    }
+  }, [triggerHeal]);
 
   const handlePinch = (pos: THREE.Vector3) => {
     // Find nearest node to heal when user pinches
@@ -155,16 +233,34 @@ export default function ThirdEyeForge() {
       
       {/* Cyber-Organic HUD */}
       <div className="absolute top-0 left-0 w-full p-6 z-10 pointer-events-none flex justify-between items-start">
-        <div>
+        <div className="pointer-events-auto">
           <h1 className="text-4xl font-black tracking-tighter text-[#00ffcc] drop-shadow-[0_0_8px_rgba(0,255,204,0.8)]">
             THIRD EYE FORGE
           </h1>
           <h2 className="text-sm font-mono text-[#00ffcc] mt-1 opacity-80 tracking-[0.25em]">
-            LIVING ORGANISM CORE | 711+ ATOMS
+            LIVING ORGANISM CORE | {nodes.length} ATOMS
           </h2>
           <div className="mt-4 p-3 bg-black/40 border border-cyan-500/30 rounded backdrop-blur-sm max-w-lg shadow-lg shadow-[#00ffcc]/10">
             <p className="text-xs font-mono text-[#00ffcc] opacity-90 uppercase leading-snug">{status}</p>
           </div>
+
+          <form onSubmit={handleCreateMemory} className="mt-6 flex flex-col gap-2 max-w-md pointer-events-auto">
+            <label className="text-xs font-mono tracking-widest text-[#00ffcc] opacity-70">INPUT RAW EXPERIENCE / TRAUMA:</label>
+            <textarea 
+              value={inputText}
+              onChange={(e) => setInputText(e.target.value)}
+              className="resize-none bg-black/60 border border-[#00ffcc]/40 text-white p-3 rounded font-mono text-sm focus:outline-none focus:border-[#00ffcc] shadow-[inset_0_0_10px_rgba(0,255,204,0.1)] transition-colors"
+              rows={3}
+              placeholder="E.g. I lost my job and feel like I have no direction..."
+            />
+            <button 
+              type="submit" 
+              disabled={!inputText.trim()}
+              className="mt-2 py-2 bg-[#00ffcc]/10 hover:bg-[#00ffcc]/20 border border-[#00ffcc]/50 text-[#00ffcc] font-mono tracking-widest text-xs transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              CREATE RAW ATOM (UNHEALED)
+            </button>
+          </form>
         </div>
         
         <button 
@@ -206,7 +302,7 @@ export default function ThirdEyeForge() {
           <gridHelper args={[40, 40, 0x00ffcc, 0x002222]} position={[0, -1, 0]} />
 
           {/* Agency Path with Knot Insertion / Healing mechanics */}
-          <AgencyPath nodes={nodes} onNodeInteract={handleNodeClick} qiIntensity={qiIntensity} />
+          <AgencyPath nodes={nodes} onNodeInteract={handleNodeClick} onNodeDrop={handleNodeDrop} qiIntensity={qiIntensity} />
           
           {/* Triple-Blend Sentient Hands using WebXR (fallback enabled), FABRIK, Qi Sway, Markley Averaging */}
           <SentientHands qiIntensity={qiIntensity} onPinch={handlePinch} />
