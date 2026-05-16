@@ -13,7 +13,10 @@ const INITIAL_NODES: NodeData[] = [
   { position: new THREE.Vector3(-4, 0, -2), label: "Escape Loop (Shed)", type: 'escape', quote: "These things don't do me — I do these things.", healed: true },
   { position: new THREE.Vector3(0, 1.5, -4), label: "Roof Edge Reflex", type: 'roof', quote: "Fearless flow. Calculate. Tuck. Roll.", healed: true },
   { position: new THREE.Vector3(4, 1.0, -3), label: "Uncle's 75 Stitches", type: 'trauma', quote: "Trauma to Memory. Mind stays strong and clear.", healed: true },
-  { position: new THREE.Vector3(7, 0, -2), label: "Single-Dad Rebuild", type: 'rebuild', quote: "Pressure Builds Diamonds.", healed: true }
+  { position: new THREE.Vector3(7, 0, -2), label: "Single-Dad Rebuild", type: 'rebuild', quote: "Pressure Builds Diamonds.", healed: true },
+  { position: new THREE.Vector3(-3, 2, 2), label: "Missed Opportunity", type: 'regret', quote: "I should have taken that chance when I had it.", healed: false },
+  { position: new THREE.Vector3(3, 3, 1), label: "Fear of Failure", type: 'fear', quote: "What if everything I build falls apart?", healed: false },
+  { position: new THREE.Vector3(0, 0.5, 3), label: "Hard Learned Lesson", type: 'lesson', quote: "Trust is earned, not freely given.", healed: false }
 ];
 
 import { GazeDwellManager } from './GazeDwellManager';
@@ -103,7 +106,11 @@ export default function ThirdEyeForge() {
   const [status, setStatus] = useState("DRAG RAW BATTLE WOUNDS TO THE CENTRAL FORGE. TRI-POLYMER BINDING ENGAGED.");
   const [flashQuote, setFlashQuote] = useState<string | null>(null);
   const [inputText, setInputText] = useState("");
+  const [memoryType, setMemoryType] = useState('trauma');
   const [isSynthesizing, setIsSynthesizing] = useState(false);
+
+  const [themeInput, setThemeInput] = useState("");
+  const [isGenerating, setIsGenerating] = useState(false);
 
   const handleCreateMemory = (e: React.FormEvent) => {
     e.preventDefault();
@@ -112,14 +119,68 @@ export default function ThirdEyeForge() {
       ...prev,
       {
         position: new THREE.Vector3((Math.random() - 0.5) * 6, Math.random() * 2 + 1, (Math.random() - 0.5) * 6),
-        label: "Raw Memory",
-        type: 'trauma',
+        label: `Raw ${memoryType.charAt(0).toUpperCase() + memoryType.slice(1)}`,
+        type: memoryType,
         quote: inputText,
         healed: false
       }
     ]);
     setInputText("");
     setStatus("NEW RAW MEMORY DETECTED. DRAG ATOM TO FORGE TO SYNTHESIZE AGENCY.");
+  };
+
+  const handleGenerateMemory = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!themeInput.trim() || isGenerating) return;
+    setIsGenerating(true);
+    setStatus(`GENERATING SCENARIO BASED ON: "${themeInput.toUpperCase()}"...`);
+
+    try {
+      if (process.env.GEMINI_API_KEY) {
+        const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
+        const response = await ai.models.generateContent({
+           model: "gemini-3.1-flash-lite",
+           contents: `You are generating a "Raw Memory" based on the following theme: "${themeInput}".
+           Output a valid JSON object with the following keys:
+           - label: A short label for the memory (max 3 words).
+           - type: One of "trauma", "regret", "fear", or "lesson".
+           - quote: A 1-2 sentence description of the raw unhealed experience.
+           Output ONLY the raw JSON object, without any markdown formatting or code blocks.`,
+           config: {
+             responseMimeType: "application/json"
+           }
+        });
+        
+        let data;
+        if (response.text) {
+          data = JSON.parse(response.text.trim());
+        }
+        
+        if (data && data.label && data.type && data.quote) {
+           setNodes(prev => [
+             ...prev,
+             {
+               position: new THREE.Vector3((Math.random() - 0.5) * 6, Math.random() * 2 + 1, (Math.random() - 0.5) * 6),
+               label: data.label,
+               type: ['trauma', 'regret', 'fear', 'lesson'].includes(data.type.toLowerCase()) ? data.type.toLowerCase() : 'trauma',
+               quote: data.quote,
+               healed: false
+             }
+           ]);
+           setThemeInput("");
+           setStatus(`SCENARIO GENERATED. DRAG THIS RAW ATOM TO THE FORGE.`);
+        } else {
+           setStatus(`GENERATION FAILED: INVALID DATA FORMAT.`);
+        }
+      } else {
+         setStatus(`GENERATION FAILED: MISSING API KEY.`);
+      }
+    } catch(e: any) {
+       console.error(e);
+       setStatus(`GENERATION FAILED: ${e.message}`);
+    } finally {
+       setIsGenerating(false);
+    }
   };
 
   const triggerHeal = useCallback(async (index: number) => {
@@ -245,20 +306,52 @@ export default function ThirdEyeForge() {
           </div>
 
           <form onSubmit={handleCreateMemory} className="mt-6 flex flex-col gap-2 max-w-md pointer-events-auto">
-            <label className="text-xs font-mono tracking-widest text-[#00ffcc] opacity-70">INPUT RAW EXPERIENCE / TRAUMA:</label>
-            <textarea 
-              value={inputText}
-              onChange={(e) => setInputText(e.target.value)}
-              className="resize-none bg-black/60 border border-[#00ffcc]/40 text-white p-3 rounded font-mono text-sm focus:outline-none focus:border-[#00ffcc] shadow-[inset_0_0_10px_rgba(0,255,204,0.1)] transition-colors"
-              rows={3}
-              placeholder="E.g. I lost my job and feel like I have no direction..."
-            />
+            <label className="text-xs font-mono tracking-widest text-[#00ffcc] opacity-70">INPUT RAW EXPERIENCE:</label>
+            <div className="flex gap-2">
+              <select 
+                value={memoryType} 
+                onChange={e => setMemoryType(e.target.value)}
+                className="bg-black/60 border border-[#00ffcc]/40 text-white p-2 rounded font-mono text-xs focus:outline-none focus:border-[#00ffcc]"
+              >
+                <option value="trauma">Trauma</option>
+                <option value="regret">Regret</option>
+                <option value="fear">Fear</option>
+                <option value="lesson">Lesson</option>
+              </select>
+              <textarea 
+                value={inputText}
+                onChange={(e) => setInputText(e.target.value)}
+                className="resize-none flex-1 bg-black/60 border border-[#00ffcc]/40 text-white p-3 rounded font-mono text-sm focus:outline-none focus:border-[#00ffcc] shadow-[inset_0_0_10px_rgba(0,255,204,0.1)] transition-colors"
+                rows={2}
+                placeholder={`Describe your ${memoryType}...`}
+              />
+            </div>
             <button 
               type="submit" 
               disabled={!inputText.trim()}
               className="mt-2 py-2 bg-[#00ffcc]/10 hover:bg-[#00ffcc]/20 border border-[#00ffcc]/50 text-[#00ffcc] font-mono tracking-widest text-xs transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
             >
               CREATE RAW ATOM (UNHEALED)
+            </button>
+          </form>
+
+          <form onSubmit={handleGenerateMemory} className="mt-4 flex flex-col gap-2 max-w-md pointer-events-auto border-t border-[#00ffcc]/20 pt-4">
+            <label className="text-xs font-mono tracking-widest text-[#ffcc00] opacity-70">GENERATE SCENARIO (AI):</label>
+            <div className="flex gap-2">
+              <input 
+                type="text"
+                value={themeInput}
+                onChange={(e) => setThemeInput(e.target.value)}
+                className="flex-1 bg-black/60 border border-[#ffcc00]/40 text-white p-2 rounded font-mono text-xs focus:outline-none focus:border-[#ffcc00] shadow-[inset_0_0_10px_rgba(255,204,0,0.1)] transition-colors"
+                placeholder="E.g. A difficult decision at work..."
+              />
+            </div>
+            <button 
+              type="submit" 
+              disabled={!themeInput.trim() || isGenerating}
+              className="py-2 bg-[#ffcc00]/10 hover:bg-[#ffcc00]/20 border border-[#ffcc00]/50 text-[#ffcc00] font-mono tracking-widest text-xs transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              {isGenerating ? "GENERATING..." : "GENERATE AI MEMORY"}
             </button>
           </form>
         </div>

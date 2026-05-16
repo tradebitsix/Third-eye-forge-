@@ -7,7 +7,7 @@ export interface NodeData {
   position: THREE.Vector3;
   label: string;
   quote: string;
-  type: 'escape' | 'roof' | 'rebuild' | 'trauma';
+  type: string;
   healed: boolean;
 }
 
@@ -57,18 +57,36 @@ function NodeVisual({ node, index, onClick, onDrop }: { node: NodeData, index: n
     if (meshRef.current) {
       if (!node.healed) {
         if (!isDragging) {
-          // BATTLE WOUND: Unhealed trauma is a cracked, chaotic, jittery mesh
-          meshRef.current.rotation.x += Math.random() * 0.3;
-          meshRef.current.rotation.y += Math.random() * 0.3;
-          meshRef.current.position.set(
-            node.position.x + (Math.random() - 0.5) * 0.15,
-            node.position.y + (Math.random() - 0.5) * 0.15,
-            node.position.z + (Math.random() - 0.5) * 0.15
-          );
+          if (node.type === 'fear') {
+             // erratic darting and rapid pulsing
+             meshRef.current.position.x = node.position.x + Math.sin(t * 15) * 0.1;
+             meshRef.current.position.y = node.position.y + Math.cos(t * 20) * 0.1;
+             meshRef.current.position.z = node.position.z + Math.sin(t * 12) * 0.1;
+             meshRef.current.scale.setScalar(1 + Math.sin(t * 10) * 0.2);
+             meshRef.current.rotation.x += 0.2;
+          } else if (node.type === 'regret') {
+             // heavy slowly sinking/bobbing
+             meshRef.current.position.y = node.position.y + Math.sin(t * 2) * 0.3 - 0.2;
+             meshRef.current.rotation.y += 0.01;
+          } else if (node.type === 'lesson') {
+             // calm rotation
+             meshRef.current.rotation.y += 0.05;
+             meshRef.current.rotation.x += 0.02;
+          } else {
+             // trauma (default) - jittery
+             meshRef.current.rotation.x += Math.random() * 0.3;
+             meshRef.current.rotation.y += Math.random() * 0.3;
+             meshRef.current.position.set(
+                node.position.x + (Math.random() - 0.5) * 0.15,
+                node.position.y + (Math.random() - 0.5) * 0.15,
+                node.position.z + (Math.random() - 0.5) * 0.15
+             );
+          }
         } else {
           // Dragging state
           meshRef.current.rotation.x += delta;
           meshRef.current.rotation.y += delta;
+          if (node.type === 'fear') meshRef.current.scale.setScalar(1);
         }
       } else {
         // HEALED: Smooth rotation, centers beautifully into alignment
@@ -131,6 +149,34 @@ function NodeVisual({ node, index, onClick, onDrop }: { node: NodeData, index: n
     }
   };
 
+  const getGeometry = () => {
+    if (node.healed) {
+      return <sphereGeometry args={[0.35, 32, 32]} />;
+    }
+    switch(node.type) {
+      case 'regret': return <torusKnotGeometry args={[0.2, 0.08, 64, 8]} />;
+      case 'fear': return <octahedronGeometry args={[0.35, 0]} />;
+      case 'lesson': return <dodecahedronGeometry args={[0.3, 0]} />;
+      case 'trauma':
+      default:
+        return <icosahedronGeometry args={[0.3, 0]} />;
+    }
+  };
+
+  const getMaterialProps = () => {
+    if (node.healed) {
+      return { color: "#00ffcc", emissive: "#00ffcc", wireframe: false, emissiveIntensity: 1.5 };
+    }
+    switch(node.type) {
+      case 'regret': return { color: "#5555ff", emissive: "#0000ff", wireframe: true, emissiveIntensity: 0.8 };
+      case 'fear': return { color: "#ff00ff", emissive: "#aa00aa", wireframe: true, emissiveIntensity: 1.2 };
+      case 'lesson': return { color: "#ffffff", emissive: "#cccccc", wireframe: true, emissiveIntensity: 0.8 };
+      case 'trauma':
+      default:
+        return { color: "#ff0033", emissive: "#ff0000", wireframe: true, emissiveIntensity: 0.8 };
+    }
+  };
+
   return (
     <group>
       <mesh
@@ -139,16 +185,9 @@ function NodeVisual({ node, index, onClick, onDrop }: { node: NodeData, index: n
         onPointerOver={() => (document.body.style.cursor = isDragging ? 'grabbing' : 'grab')}
         onPointerOut={() => (document.body.style.cursor = 'auto')}
       >
-        {node.healed ? (
-          <icosahedronGeometry args={[0.35, 4]} /> // Smooth high-poly curve for strong memory
-        ) : (
-          <icosahedronGeometry args={[0.3, 0]} /> // Jagged low-poly wound for trauma
-        )}
+        {getGeometry()}
         <meshStandardMaterial
-          color={node.healed ? "#00ffcc" : "#ff0033"}
-          wireframe={!node.healed}
-          emissive={node.healed ? "#00ffcc" : "#ff0000"}
-          emissiveIntensity={node.healed ? 1.5 : 0.8}
+          {...getMaterialProps()}
           toneMapped={false}
         />
         
