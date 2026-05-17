@@ -2,6 +2,7 @@ import React, { useRef, useMemo, useState, useEffect } from 'react';
 import { useFrame, useThree } from '@react-three/fiber';
 import { Text, Line, Float } from '@react-three/drei';
 import * as THREE from 'three';
+import { spatialAudio } from './audio/SpatialSynth';
 
 export interface NodeData {
   position: THREE.Vector3;
@@ -29,6 +30,8 @@ function NodeVisual({ node, index, onClick, onDrop }: { node: NodeData, index: n
   const [isDragging, setIsDragging] = useState(false);
   const dragPlane = useMemo(() => new THREE.Plane(), []);
   const targetVec = useMemo(() => new THREE.Vector3(), []);
+  const forgePos = useMemo(() => new THREE.Vector3(0, -1, -5), []);
+  const [distToForge, setDistToForge] = useState(10);
 
   // Stitches for unhealed trauma nodes (like the 75 stitches)
   const stitches = useMemo(() => {
@@ -113,6 +116,7 @@ function NodeVisual({ node, index, onClick, onDrop }: { node: NodeData, index: n
     onPointerDown: (e: any) => {
       e.stopPropagation();
       if (!node.healed) {
+         spatialAudio.playInteract(meshRef.current.position, 'grab');
          setIsDragging(true);
          if (controls) (controls as any).enabled = false;
          // capture pointer for reliable dragging
@@ -125,12 +129,14 @@ function NodeVisual({ node, index, onClick, onDrop }: { node: NodeData, index: n
       e.stopPropagation();
       if (isDragging) {
          setIsDragging(false);
+         spatialAudio.playInteract(meshRef.current.position, 'drop');
          if (controls) (controls as any).enabled = true;
          if (e.target && e.target.releasePointerCapture) {
              e.target.releasePointerCapture(e.pointerId);
          }
          onDrop(index, meshRef.current.position.clone());
       } else {
+         spatialAudio.playInteract(node.position, 'drop');
          onClick(); 
       }
     },
@@ -143,7 +149,15 @@ function NodeVisual({ node, index, onClick, onDrop }: { node: NodeData, index: n
              new THREE.Vector3(0,0,node.position.z)
          );
          if (e.ray.intersectPlane(dragPlane, targetVec)) {
-             meshRef.current.position.copy(targetVec);
+             const dist = targetVec.distanceTo(forgePos);
+             setDistToForge(dist);
+             
+             if (dist < 2.5) {
+                 // Snap effect
+                 meshRef.current.position.lerpVectors(targetVec, forgePos, 0.6);
+             } else {
+                 meshRef.current.position.copy(targetVec);
+             }
          }
       }
     }
@@ -182,7 +196,11 @@ function NodeVisual({ node, index, onClick, onDrop }: { node: NodeData, index: n
       <mesh
         ref={meshRef}
         {...bind}
-        onPointerOver={() => (document.body.style.cursor = isDragging ? 'grabbing' : 'grab')}
+        onPointerOver={(e) => {
+          e.stopPropagation();
+          document.body.style.cursor = isDragging ? 'grabbing' : 'grab';
+          spatialAudio.playInteract(node.position, 'hover');
+        }}
         onPointerOut={() => (document.body.style.cursor = 'auto')}
       >
         {getGeometry()}
@@ -199,6 +217,17 @@ function NodeVisual({ node, index, onClick, onDrop }: { node: NodeData, index: n
           </mesh>
         ))}
       </mesh>
+
+      {/* Visual Feedback Line during Drag */}
+      {isDragging && meshRef.current && (
+        <Line 
+          points={[meshRef.current.position.clone(), forgePos]} 
+          color={distToForge < 2.5 ? "#00ffcc" : "#ff3333"} 
+          lineWidth={distToForge < 2.5 ? 4 : 2}
+          dashed 
+          dashScale={20}
+        />
+      )}
 
       {/* Particle Healing Burst */}
       {node.healed && (
@@ -375,6 +404,56 @@ function AgencyPillar({ nodes, qiIntensity }: { nodes: NodeData[], qiIntensity: 
 }
 
 // ---------------------------------------------------------
+// QI FLOW STREAM
+// ---------------------------------------------------------
+function QiFlowStream({ points, qiIntensity, color }: { points: THREE.Vector3[], qiIntensity: number, color: string }) {
+  const particlesRef = useRef<THREE.Group>(null!);
+  const count = 30; // Number of particles flowing
+
+  const particles = useMemo(() => {
+    return Array.from({ length: count }).map((_, i) => ({
+      progress: (i / count), // Start at staggered positions
+      speedOffset: Math.random() * 0.5 + 0.5, // Slight varied speed
+    }));
+  }, [count]);
+
+  useFrame((state, delta) => {
+    if (particlesRef.current && points.length > 0) {
+      const children = particlesRef.current.children;
+      particles.forEach((p, i) => {
+        // Move along the path, speed influenced by qiIntensity
+        p.progress += delta * 0.1 * qiIntensity * p.speedOffset;
+        if (p.progress > 1) p.progress -= 1; // Loop back
+        
+        const idx = p.progress * (points.length - 1);
+        const i0 = Math.floor(idx);
+        const i1 = Math.min(i0 + 1, points.length - 1);
+        const t = idx - i0;
+
+        const mesh = children[i] as THREE.Mesh;
+        if (mesh) {
+           mesh.position.lerpVectors(points[i0], points[i1], t);
+           // Add a slight jitter/wave based on Qi for visual energy
+           mesh.position.y += Math.sin(state.clock.elapsedTime * 10 * p.speedOffset + i) * 0.1 * qiIntensity;
+           mesh.scale.setScalar(0.5 + qiIntensity * 0.2 + Math.sin(state.clock.elapsedTime * 5 + i) * 0.2);
+        }
+      });
+    }
+  });
+
+  return (
+    <group ref={particlesRef}>
+      {particles.map((_, i) => (
+        <mesh key={i}>
+          <sphereGeometry args={[0.08, 8, 8]} />
+          <meshBasicMaterial color={color} transparent opacity={0.6} blending={THREE.AdditiveBlending} depthWrite={false} />
+        </mesh>
+      ))}
+    </group>
+  );
+}
+
+// ---------------------------------------------------------
 // MAIN PATH MANAGER
 // ---------------------------------------------------------
 export default function AgencyPath({ nodes, onNodeInteract, onNodeDrop, qiIntensity }: AgencyPathProps) {
@@ -438,6 +517,9 @@ export default function AgencyPath({ nodes, onNodeInteract, onNodeDrop, qiIntens
         transparent
         opacity={0.8}
       />
+
+      {/* Qi Energy Flowing through the Path */}
+      <QiFlowStream points={points} qiIntensity={qiIntensity} color={allHealed ? "#ffffff" : "#00ffcc"} />
 
       {isRoofLeapActive && (
          <Line points={roofLeapArc} color="#ffff00" lineWidth={4} dashed dashScale={10} opacity={0.6} transparent />

@@ -8,6 +8,15 @@ import { GoogleGenAI } from '@google/genai';
 
 import AgencyPath, { NodeData } from './AgencyPath';
 import SentientHands from './SentientHands';
+import { spatialAudio } from './audio/SpatialSynth';
+
+function AudioListenerUpdater() {
+  const { camera } = useThree();
+  useFrame(() => {
+    spatialAudio.updateListener(camera);
+  });
+  return null;
+}
 
 const INITIAL_NODES: NodeData[] = [
   { position: new THREE.Vector3(-4, 0, -2), label: "Escape Loop (Shed)", type: 'escape', quote: "These things don't do me — I do these things.", healed: true },
@@ -220,6 +229,8 @@ export default function ThirdEyeForge() {
               setStatus(`SYSTEM: AGENCY ASSERTED: '${finalQuote.toUpperCase()}'`);
               setFlashQuote(finalQuote.toUpperCase());
               setTimeout(() => setFlashQuote(null), 4000);
+              
+              spatialAudio.playFlare(newNodes[index].position);
           }
           return newNodes;
       });
@@ -369,8 +380,9 @@ export default function ThirdEyeForge() {
       </div>
 
       {/* 3D Core */}
-      <Canvas camera={{ position: [0, 2, 7] }}>
+      <Canvas camera={{ position: [0, 2, 7] }} onPointerDown={() => spatialAudio.init()}>
         <XR store={store}>
+          <AudioListenerUpdater />
           <color attach="background" args={['#010102']} />
           <ambientLight intensity={0.2} />
           

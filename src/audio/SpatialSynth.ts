@@ -1,0 +1,155 @@
+import * as THREE from 'three';
+
+class SpatialSynthManager {
+  private audioCtx: AudioContext | null = null;
+  private isInitialized = false;
+
+  init() {
+    if (this.isInitialized) return;
+    const Ctx = window.AudioContext || (window as any).webkitAudioContext;
+    if (Ctx) {
+      this.audioCtx = new Ctx();
+      if (this.audioCtx.state === 'suspended') {
+        this.audioCtx.resume();
+      }
+      this.isInitialized = true;
+    }
+  }
+
+  updateListener(camera: THREE.Camera) {
+    if (!this.audioCtx) return;
+    const listener = this.audioCtx.listener;
+    
+    // Update position
+    if (listener.positionX) {
+      listener.positionX.value = camera.position.x;
+      listener.positionY.value = camera.position.y;
+      listener.positionZ.value = camera.position.z;
+    } else if (listener.setPosition) {
+      listener.setPosition(camera.position.x, camera.position.y, camera.position.z);
+    }
+    
+    // Update orientation
+    const forward = new THREE.Vector3(0, 0, -1).applyQuaternion(camera.quaternion);
+    const up = new THREE.Vector3(0, 1, 0).applyQuaternion(camera.quaternion);
+    
+    if (listener.forwardX) {
+      listener.forwardX.value = forward.x;
+      listener.forwardY.value = forward.y;
+      listener.forwardZ.value = forward.z;
+      listener.upX.value = up.x;
+      listener.upY.value = up.y;
+      listener.upZ.value = up.z;
+    } else if (listener.setOrientation) {
+      listener.setOrientation(forward.x, forward.y, forward.z, up.x, up.y, up.z);
+    }
+  }
+
+  playFlare(position: THREE.Vector3) {
+    if (!this.audioCtx) this.init();
+    if (!this.audioCtx) return;
+    
+    const panner = this.createPanner(position);
+    
+    const osc1 = this.audioCtx.createOscillator();
+    const osc2 = this.audioCtx.createOscillator();
+    const gain = this.audioCtx.createGain();
+    
+    osc1.type = 'sine';
+    osc2.type = 'triangle';
+    
+    const now = this.audioCtx.currentTime;
+    
+    osc1.frequency.setValueAtTime(150, now);
+    osc1.frequency.setTargetAtTime(600, now + 0.1, 0.2);
+    
+    osc2.frequency.setValueAtTime(200, now);
+    osc2.frequency.setTargetAtTime(800, now + 0.1, 0.2);
+
+    gain.gain.setValueAtTime(0, now);
+    gain.gain.linearRampToValueAtTime(0.6, now + 0.1);
+    gain.gain.exponentialRampToValueAtTime(0.001, now + 2.0);
+    
+    osc1.connect(gain);
+    osc2.connect(gain);
+    gain.connect(panner);
+    panner.connect(this.audioCtx.destination);
+    
+    osc1.start(now);
+    osc2.start(now);
+    osc1.stop(now + 2.0);
+    osc2.stop(now + 2.0);
+  }
+
+  playInteract(position: THREE.Vector3, type: 'grab' | 'drop' | 'hover' = 'hover') {
+    if (!this.audioCtx) this.init();
+    if (!this.audioCtx) return;
+    
+    const panner = this.createPanner(position);
+    
+    const osc = this.audioCtx.createOscillator();
+    const gain = this.audioCtx.createGain();
+    
+    const now = this.audioCtx.currentTime;
+    
+    if (type === 'hover') {
+      osc.type = 'sine';
+      osc.frequency.setValueAtTime(800, now);
+      gain.gain.setValueAtTime(0, now);
+      gain.gain.linearRampToValueAtTime(0.1, now + 0.02);
+      gain.gain.linearRampToValueAtTime(0, now + 0.1);
+      osc.start(now);
+      osc.stop(now + 0.1);
+    } else if (type === 'grab') {
+      osc.type = 'square';
+      osc.frequency.setValueAtTime(300, now);
+      osc.frequency.exponentialRampToValueAtTime(600, now + 0.1);
+      gain.gain.setValueAtTime(0, now);
+      gain.gain.linearRampToValueAtTime(0.2, now + 0.02);
+      gain.gain.exponentialRampToValueAtTime(0.01, now + 0.2);
+      osc.start(now);
+      osc.stop(now + 0.2);
+    } else if (type === 'drop') {
+      osc.type = 'square';
+      osc.frequency.setValueAtTime(600, now);
+      osc.frequency.exponentialRampToValueAtTime(200, now + 0.15);
+      gain.gain.setValueAtTime(0, now);
+      gain.gain.linearRampToValueAtTime(0.2, now + 0.02);
+      gain.gain.exponentialRampToValueAtTime(0.01, now + 0.3);
+      osc.start(now);
+      osc.stop(now + 0.3);
+    }
+
+    // A low-pass filter to make it sound less harsh
+    const filter = this.audioCtx.createBiquadFilter();
+    filter.type = 'lowpass';
+    filter.frequency.value = 2000;
+
+    osc.connect(gain);
+    gain.connect(filter);
+    filter.connect(panner);
+    panner.connect(this.audioCtx.destination);
+  }
+
+  private createPanner(position: THREE.Vector3): PannerNode {
+    if (!this.audioCtx) throw new Error("AudioContext not initialized");
+    const panner = this.audioCtx.createPanner();
+    panner.panningModel = 'HRTF';
+    panner.distanceModel = 'inverse';
+    panner.refDistance = 2;
+    panner.maxDistance = 10000;
+    panner.rolloffFactor = 1;
+    
+    if (panner.positionX) {
+      panner.positionX.value = position.x;
+      panner.positionY.value = position.y;
+      panner.positionZ.value = position.z;
+    } else if (panner.setPosition) {
+      panner.setPosition(position.x, position.y, position.z);
+    }
+    
+    return panner;
+  }
+}
+
+export const spatialAudio = new SpatialSynthManager();

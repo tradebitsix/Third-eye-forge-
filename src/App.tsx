@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import ThirdEyeForge from './ThirdEyeForge';
 import ConstructionSimulator from './rooms/ConstructionSimulator';
+import PrintLab from './rooms/PrintLab';
 import { motion, AnimatePresence } from 'motion/react';
 
 export default function App() {
@@ -26,19 +27,19 @@ export default function App() {
                SELECT AN ENVIRONMENT TO ENTER. TRAIN FOR FATAL POSSIBILITIES. TEST WITS OUTSIDE THE SAFE ZONE. BRING BLUEPRINTS TO LIFE.
              </p>
 
-             <div className="grid grid-cols-1 md:grid-cols-2 gap-4 w-full max-w-5xl px-6">
+             <div className="grid grid-cols-1 md:grid-cols-3 gap-4 w-full max-w-6xl px-6">
                 <button 
                   onClick={() => setCurrentRoom('forge')}
                   className="group relative p-8 border border-white/5 bg-white/5 hover:bg-white/10 transition-all rounded-lg overflow-hidden text-left"
                 >
                    <div className="absolute left-0 top-0 w-1 h-full bg-[#00ffcc] group-hover:w-full group-hover:bg-[#00ffcc]/10 transition-all duration-500 z-0" />
-                   <div className="relative z-10 flex justify-between items-start">
+                   <div className="relative z-10 flex flex-col h-full">
                      <div>
                        <h2 className="text-2xl font-black text-white uppercase tracking-tight">Third Eye Forge</h2>
                        <p className="text-[#00ffcc] font-mono text-[10px] tracking-widest mt-1 uppercase">Personal Lore & Growth</p>
                      </div>
+                     <p className="text-gray-400 mt-4 text-sm relative z-10 font-sans font-medium flex-grow">Refinery for raw memories, trauma, and foundational growth.</p>
                    </div>
-                   <p className="text-gray-400 mt-4 text-sm relative z-10 font-sans font-medium">Refinery for raw memories, trauma, and foundational growth.</p>
                 </button>
 
                 <button 
@@ -46,14 +47,32 @@ export default function App() {
                   className="group relative p-8 border border-white/5 bg-white/5 hover:bg-white/10 transition-all rounded-lg overflow-hidden text-left backdrop-blur-sm"
                 >
                    <div className="absolute left-0 top-0 w-1 h-full bg-orange-500 group-hover:w-full group-hover:bg-orange-500/10 transition-all duration-500 z-0" />
-                   <div className="relative z-10 flex justify-between items-start">
-                     <div>
-                       <h2 className="text-2xl font-black text-white uppercase tracking-tight">Jobsite VR Simulator</h2>
-                       <p className="text-orange-500 font-mono text-[10px] tracking-widest mt-1 uppercase">Commercial & Residential</p>
+                   <div className="relative z-10 flex flex-col h-full">
+                     <div className="flex justify-between items-start">
+                       <div>
+                         <h2 className="text-2xl font-black text-white uppercase tracking-tight">Jobsite VR</h2>
+                         <p className="text-orange-500 font-mono text-[10px] tracking-widest mt-1 uppercase">Commercial & Residential</p>
+                       </div>
+                       <span className="text-[10px] bg-red-500/20 text-red-400 border border-red-500/30 px-2 py-1 rounded font-mono uppercase tracking-widest ml-2 hidden lg:block">Fatal Consequence</span>
                      </div>
-                     <span className="text-[10px] bg-red-500/20 text-red-400 border border-red-500/30 px-2 py-1 rounded font-mono uppercase tracking-widest">Fatal Consequence</span>
+                     <p className="text-gray-400 mt-4 text-sm relative z-10 font-sans font-medium flex-grow">Test safety, identify architectural flaws, and learn consequences in high-stakes environments.</p>
                    </div>
-                   <p className="text-gray-400 mt-4 text-sm relative z-10 font-sans font-medium">Test safety, identify architectural flaws, stage materials, and learn consequences in high-stakes framing and roofing environments.</p>
+                </button>
+
+                <button 
+                  onClick={() => setCurrentRoom('print_lab')}
+                  className="group relative p-8 border border-white/5 bg-white/5 hover:bg-white/10 transition-all rounded-lg overflow-hidden text-left backdrop-blur-sm"
+                >
+                   <div className="absolute left-0 top-0 w-1 h-full bg-blue-500 group-hover:w-full group-hover:bg-blue-500/10 transition-all duration-500 z-0" />
+                   <div className="relative z-10 flex flex-col h-full">
+                     <div className="flex justify-between items-start">
+                       <div>
+                         <h2 className="text-2xl font-black text-white uppercase tracking-tight">3D Print Lab</h2>
+                         <p className="text-blue-500 font-mono text-[10px] tracking-widest mt-1 uppercase">Prototyping & Replication</p>
+                       </div>
+                     </div>
+                     <p className="text-gray-400 mt-4 text-sm relative z-10 font-sans font-medium flex-grow">Upload images or specify parts (RC cars, drones) and AI generates optimal 3D print specs for Labists.</p>
+                   </div>
                 </button>
              </div>
           </motion.div>
@@ -70,6 +89,13 @@ export default function App() {
           <motion.div key="construction_sim" className="w-full h-full absolute inset-0" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
              <button onClick={() => setCurrentRoom('hub')} className="absolute bottom-6 left-6 z-50 text-orange-500 font-mono text-[10px] hover:bg-orange-500/10 uppercase tracking-widest bg-black/50 px-4 py-2 border border-orange-500/30 backdrop-blur-md rounded transition-colors">&lt; EXIT / RETURN TO NEXUS</button>
              <ConstructionSimulator />
+          </motion.div>
+        )}
+
+        {currentRoom === 'print_lab' && (
+          <motion.div key="print_lab" className="w-full h-full absolute inset-0" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
+             <button onClick={() => setCurrentRoom('hub')} className="absolute bottom-6 left-6 z-50 text-blue-500 font-mono text-[10px] hover:bg-blue-500/10 uppercase tracking-widest bg-black/50 px-4 py-2 border border-blue-500/30 backdrop-blur-md rounded transition-colors">&lt; EXIT / RETURN TO NEXUS</button>
+             <PrintLab />
           </motion.div>
         )}
       </AnimatePresence>
