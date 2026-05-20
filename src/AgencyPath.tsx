@@ -220,13 +220,29 @@ function NodeVisual({ node, index, onClick, onDrop }: { node: NodeData, index: n
 
       {/* Visual Feedback Line during Drag */}
       {isDragging && meshRef.current && (
-        <Line 
-          points={[meshRef.current.position.clone(), forgePos]} 
-          color={distToForge < 2.5 ? "#00ffcc" : "#ff3333"} 
-          lineWidth={distToForge < 2.5 ? 4 : 2}
-          dashed 
-          dashScale={20}
-        />
+        <group>
+          {/* Outer Glow Line */}
+          <Line 
+            points={[meshRef.current.position.clone(), forgePos]} 
+            color={distToForge < 2.5 ? "#00ffcc" : "#ff3333"} 
+            lineWidth={distToForge < 2.5 ? 12 : 6}
+            dashed 
+            dashScale={20}
+            transparent
+            opacity={0.3}
+            depthWrite={false}
+            toneMapped={false}
+          />
+          {/* Core Line */}
+          <Line 
+            points={[meshRef.current.position.clone(), forgePos]} 
+            color={distToForge < 2.5 ? "#ffffff" : "#ffaaaa"} 
+            lineWidth={distToForge < 2.5 ? 4 : 2}
+            dashed 
+            dashScale={20}
+            toneMapped={false}
+          />
+        </group>
       )}
 
       {/* Particle Healing Burst */}
@@ -406,7 +422,7 @@ function AgencyPillar({ nodes, qiIntensity }: { nodes: NodeData[], qiIntensity: 
 // ---------------------------------------------------------
 // QI FLOW STREAM
 // ---------------------------------------------------------
-function QiFlowStream({ points, qiIntensity, color }: { points: THREE.Vector3[], qiIntensity: number, color: string }) {
+function QiFlowStream({ points, qiIntensity, color, activeNodeType }: { points: THREE.Vector3[], qiIntensity: number, color: string, activeNodeType?: string }) {
   const particlesRef = useRef<THREE.Group>(null!);
   const count = 30; // Number of particles flowing
 
@@ -421,8 +437,37 @@ function QiFlowStream({ points, qiIntensity, color }: { points: THREE.Vector3[],
     if (particlesRef.current && points.length > 0) {
       const children = particlesRef.current.children;
       particles.forEach((p, i) => {
+        let speedMultiplier = 1;
+        let jitterScale = 0;
+        let yOffsetScale = 0.1;
+        let scaleBase = 0.5;
+        let scaleJitter = 0.2;
+        
+        if (activeNodeType === 'fear') {
+            // Erratic darting, rapid chaotic flow
+            speedMultiplier = 1.8;
+            jitterScale = 0.3;
+            yOffsetScale = 0.4;
+            scaleBase = 0.3;
+            scaleJitter = 0.4;
+        } else if (activeNodeType === 'regret') {
+            // Slow, heavy, sluggish flow
+            speedMultiplier = 0.25;
+            jitterScale = 0.02;
+            yOffsetScale = -0.05; // slightly lower
+            scaleBase = 0.8;
+            scaleJitter = 0.05;
+        } else if (activeNodeType === 'trauma') {
+            // Flickering, glitchy, chaotic flow
+            speedMultiplier = 0.7;
+            jitterScale = 0.25;
+            yOffsetScale = 0.25;
+            scaleBase = 0.4;
+            scaleJitter = 0.6;
+        }
+
         // Move along the path, speed influenced by qiIntensity
-        p.progress += delta * 0.1 * qiIntensity * p.speedOffset;
+        p.progress += delta * 0.1 * qiIntensity * p.speedOffset * speedMultiplier;
         if (p.progress > 1) p.progress -= 1; // Loop back
         
         const idx = p.progress * (points.length - 1);
@@ -433,9 +478,50 @@ function QiFlowStream({ points, qiIntensity, color }: { points: THREE.Vector3[],
         const mesh = children[i] as THREE.Mesh;
         if (mesh) {
            mesh.position.lerpVectors(points[i0], points[i1], t);
-           // Add a slight jitter/wave based on Qi for visual energy
-           mesh.position.y += Math.sin(state.clock.elapsedTime * 10 * p.speedOffset + i) * 0.1 * qiIntensity;
-           mesh.scale.setScalar(0.5 + qiIntensity * 0.2 + Math.sin(state.clock.elapsedTime * 5 + i) * 0.2);
+           
+           // Apply specific motion variations based on node type
+           if (activeNodeType === 'fear') {
+               mesh.position.x += Math.sin(state.clock.elapsedTime * 20 * p.speedOffset + i * 1.5) * jitterScale * qiIntensity;
+               mesh.position.y += Math.cos(state.clock.elapsedTime * 25 * p.speedOffset + i * 2) * yOffsetScale * qiIntensity;
+               mesh.position.z += Math.sin(state.clock.elapsedTime * 15 * p.speedOffset + i * 3) * jitterScale * qiIntensity;
+           } else if (activeNodeType === 'trauma') {
+               mesh.position.x += (Math.random() - 0.5) * jitterScale * qiIntensity;
+               mesh.position.y += (Math.random() - 0.5) * yOffsetScale * qiIntensity;
+               mesh.position.z += (Math.random() - 0.5) * jitterScale * qiIntensity;
+               
+               // Glitchy scaling
+               if (Math.random() > 0.85) {
+                   mesh.scale.setScalar(0.05); 
+               } else {
+                   mesh.scale.setScalar(scaleBase + qiIntensity * 0.2);
+               }
+           } else if (activeNodeType === 'regret') {
+               mesh.position.y += Math.sin(state.clock.elapsedTime * 2 * p.speedOffset + i) * yOffsetScale * qiIntensity;
+           } else {
+               // Default (e.g. 'lesson' or completely healed)
+               mesh.position.y += Math.sin(state.clock.elapsedTime * 10 * p.speedOffset + i) * yOffsetScale * qiIntensity;
+           }
+
+           // Apply smooth scaling for non-trauma nodes
+           if (activeNodeType !== 'trauma') {
+               mesh.scale.setScalar(scaleBase + qiIntensity * 0.2 + Math.sin(state.clock.elapsedTime * 5 + i) * scaleJitter);
+           }
+           
+           // Adjust material color/opacity based on type
+           const material = mesh.material as THREE.MeshBasicMaterial;
+           if (activeNodeType === 'fear') {
+               material.color.setHex(0xff00ff); // Magenta
+               material.opacity = 0.8;
+           } else if (activeNodeType === 'regret') {
+               material.color.setHex(0x5555ff); // Dark blue
+               material.opacity = 0.9;
+           } else if (activeNodeType === 'trauma') {
+               material.color.setHex(0xff0033); // Red
+               material.opacity = Math.random() > 0.5 ? 0.3 : 0.9; // flickering opacity
+           } else {
+               material.color.set(color); // Default color passed as prop
+               material.opacity = 0.6;
+           }
         }
       });
     }
@@ -446,7 +532,7 @@ function QiFlowStream({ points, qiIntensity, color }: { points: THREE.Vector3[],
       {particles.map((_, i) => (
         <mesh key={i}>
           <sphereGeometry args={[0.08, 8, 8]} />
-          <meshBasicMaterial color={color} transparent opacity={0.6} blending={THREE.AdditiveBlending} depthWrite={false} />
+          <meshBasicMaterial transparent opacity={0.6} blending={THREE.AdditiveBlending} depthWrite={false} color={color} />
         </mesh>
       ))}
     </group>
@@ -467,11 +553,12 @@ export default function AgencyPath({ nodes, onNodeInteract, onNodeDrop, qiIntens
 
   const numHealed = nodes.filter(n => n.healed).length;
   const allHealed = numHealed === nodes.length;
+  const activeUnhealedNode = nodes.find(n => !n.healed);
 
   // Knot Insertion Mechanic (Boehm’s algorithm made visible): 
   // As trauma becomes agency, resolution increases, jitter dies, path smooths.
   const points = useMemo(() => {
-    const resolution = 20 + numHealed * 80; 
+    const resolution = numHealed > 5 ? 40 + numHealed * 120 : 20 + numHealed * 80; 
     return curve.getPoints(resolution);
   }, [curve, numHealed]);
 
@@ -519,7 +606,7 @@ export default function AgencyPath({ nodes, onNodeInteract, onNodeDrop, qiIntens
       />
 
       {/* Qi Energy Flowing through the Path */}
-      <QiFlowStream points={points} qiIntensity={qiIntensity} color={allHealed ? "#ffffff" : "#00ffcc"} />
+      <QiFlowStream points={points} qiIntensity={qiIntensity} color={allHealed ? "#ffffff" : "#00ffcc"} activeNodeType={activeUnhealedNode?.type} />
 
       {isRoofLeapActive && (
          <Line points={roofLeapArc} color="#ffff00" lineWidth={4} dashed dashScale={10} opacity={0.6} transparent />

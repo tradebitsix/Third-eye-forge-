@@ -171,9 +171,8 @@ export default function ConstructionSimulator() {
       )}
 
       <Canvas camera={{ position: [0, 4, 10], fov: 50 }}>
-        <Environment preset="city" />
-        <ambientLight intensity={0.5} />
-        <directionalLight position={[10, 10, 5]} intensity={1.5} castShadow />
+        <ambientLight intensity={0.8} />
+        <directionalLight position={[10, 10, 5]} intensity={2.0} castShadow />
 
         <group>
           {/* Ground */}

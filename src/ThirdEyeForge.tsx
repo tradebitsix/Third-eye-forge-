@@ -1,7 +1,8 @@
 import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import { Canvas, useFrame, useThree } from '@react-three/fiber';
 import { OrbitControls, Environment, Text } from '@react-three/drei';
-import { XR, createXRStore } from '@react-three/xr';
+import { XR } from '@react-three/xr';
+import { xrStore as store } from './xrStore';
 import { EffectComposer, Bloom } from '@react-three/postprocessing';
 import * as THREE from 'three';
 import { GoogleGenAI } from '@google/genai';
@@ -105,9 +106,7 @@ function AmbientParticles() {
   );
 }
 
-const store = createXRStore({
-  hand: true, // enables generic-hand
-});
+// Store moved to global imported xrStore
 
 export default function ThirdEyeForge() {
   const [nodes, setNodes] = useState<NodeData[]>(INITIAL_NODES);
@@ -145,7 +144,7 @@ export default function ThirdEyeForge() {
     setStatus(`GENERATING SCENARIO BASED ON: "${themeInput.toUpperCase()}"...`);
 
     try {
-      if (process.env.GEMINI_API_KEY) {
+      if (typeof process !== 'undefined' && process.env && process.env.GEMINI_API_KEY) {
         const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
         const response = await ai.models.generateContent({
            model: "gemini-3.1-flash-lite",
@@ -202,7 +201,7 @@ export default function ThirdEyeForge() {
       let finalQuote = nodeToHeal.quote;
 
       // Ensure API key exists in env when running locally, in AI Studio it is provided
-      if (process.env.GEMINI_API_KEY) {
+      if (typeof process !== 'undefined' && process.env && process.env.GEMINI_API_KEY) {
         const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
         const response = await ai.models.generateContent({
            model: "gemini-3.1-flash-lite",
@@ -384,7 +383,7 @@ export default function ThirdEyeForge() {
         <XR store={store}>
           <AudioListenerUpdater />
           <color attach="background" args={['#010102']} />
-          <ambientLight intensity={0.2} />
+          <ambientLight intensity={0.5} />
           
           {/* Flash light when healing triggers */}
           <pointLight position={[0, 4, 0]} intensity={qiIntensity > 2 ? 8 : 1.5} color={qiIntensity > 2 ? "#ffffff" : "#00ffcc"} />
@@ -413,7 +412,6 @@ export default function ThirdEyeForge() {
           <SentientHands qiIntensity={qiIntensity} onPinch={handlePinch} />
 
           <OrbitControls enablePan={true} enableRotate={true} />
-          <Environment preset="night" />
         </XR>
       </Canvas>
     </div>
