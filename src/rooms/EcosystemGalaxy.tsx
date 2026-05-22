@@ -4,11 +4,11 @@ import { OrbitControls, Text, Float, Stars, Html } from '@react-three/drei';
 import * as THREE from 'three';
 import { motion, AnimatePresence } from 'motion/react';
 import { EffectComposer, Bloom } from '@react-three/postprocessing';
+import { useWebGLAvailable } from '../webglCheck';
+import { WebGLErrorBoundary } from '../components/WebGLErrorBoundary';
 
 import { XR } from '@react-three/xr';
 import { xrStore as store } from '../xrStore';
-
-// Store imported from shared module
 
 export interface AgentBuild {
   id: string;
@@ -17,29 +17,11 @@ export interface AgentBuild {
   role: string;
   status: string;
   color: string;
+  url?: string;
+  vercelUrl?: string;
 }
 
-const BASE_NAMES = ["Flow Fanz Agent", "Virtual The One", "The One Crew", "Third Eye Forge", "Universal API", "mCP Orchestrator", "Vercel Deploy Bot", "XR Atom Node", "Galaxy Core", "Lore Builder", "Flow Connector", "Syntax Weaver", "Logic Scribe", "Null Pointer", "Build Automator"];
-const BASE_ROLES = ["mCP Indexing", "Vercel Builder", "Operations", "Lore Integration", "Data Bridge", "Security", "Analytics", "Routing", "Frontend Generation", "Database Synchronization"];
 const COLORS = ['#00ffcc', '#ffcc00', '#ff00ff', '#ff4444', '#4444ff', '#00ff00', '#00ffff', '#ffbc00', '#ff0077', '#aa00ff'];
-
-const ECOSYSTEM_AGENTS: AgentBuild[] = Array.from({ length: 43 }, (_, i) => {
-  // Create a galaxy spiral distribution
-  const angle = i * 0.5;
-  const radius = 2 + (i * 0.3);
-  const x = Math.cos(angle) * radius;
-  const z = Math.sin(angle) * radius;
-  const y = (Math.random() - 0.5) * 5;
-
-  return {
-    id: `node-${i}`,
-    position: new THREE.Vector3(x, y, z),
-    name: BASE_NAMES[i % BASE_NAMES.length] + (i > BASE_NAMES.length ? ` Mk.${Math.floor(i / BASE_NAMES.length)}` : ''),
-    role: BASE_ROLES[i % BASE_ROLES.length],
-    status: Math.random() > 0.2 ? 'Active Build' : 'Standby',
-    color: COLORS[i % COLORS.length]
-  };
-});
 
 function IntroAnimation({ onIntroComplete }: { onIntroComplete: () => void }) {
   const theRef = useRef<THREE.Group>(null!);
@@ -216,12 +198,232 @@ export default function EcosystemGalaxy() {
   const [introDone, setIntroDone] = useState(false);
   const [selectedAgent, setSelectedAgent] = useState<AgentBuild | null>(null);
   const [showMap, setShowMap] = useState(false);
+  const [agents, setAgents] = useState<AgentBuild[]>([]);
+
+  // Automatically mark intro as complete on load if in 2D fallback to provide instant response
+  const isWebGL = useWebGLAvailable();
+
+  useEffect(() => {
+    if (!isWebGL) {
+      setIntroDone(true);
+    }
+  }, [isWebGL]);
+
+  useEffect(() => {
+    async function loadMCP() {
+      try {
+        const res = await fetch('https://fanz-github-mcp.vercel.app/repos');
+        if (!res.ok) return;
+        const data = await res.json();
+        if (data && data.repos) {
+          const loadedAgents: AgentBuild[] = data.repos.map((repo: any, i: number) => {
+            const angle = i * 0.5;
+            const radius = 2 + (i * 0.3);
+            const x = Math.cos(angle) * radius;
+            const z = Math.sin(angle) * radius;
+            const y = (Math.random() - 0.5) * 5;
+            return {
+              id: repo.name || `node-${i}`,
+              position: new THREE.Vector3(x, y, z),
+              name: repo.name.replace(/-/g, ' ').trim(),
+              role: repo.language || 'Unknown Stack',
+              status: repo.vercel_url ? 'Deployed (Vercel)' : 'Staging',
+              color: COLORS[i % COLORS.length],
+              url: repo.url,
+              vercelUrl: repo.vercel_url,
+            };
+          });
+          setAgents(loadedAgents);
+        }
+      } catch (err) {
+        console.error("Failed to load MCP repos", err);
+      }
+    }
+    loadMCP();
+  },[]);
 
   return (
     <div className="w-full h-screen bg-[#010103] text-white flex flex-col font-sans overflow-hidden relative">
       
-      {/* 2D Overlay HUD */}
-      {introDone && (
+      {!isWebGL && (
+        <>
+          {/* HUD overlay */}
+          <div className="absolute top-0 left-0 w-full p-6 z-[15] pointer-events-none flex justify-between items-start">
+            <div className="pointer-events-auto">
+              <h1 className="text-3xl md:text-4xl font-black tracking-tighter text-[#ffcc00] drop-shadow-[0_0_8px_rgba(255,204,0,0.8)]">
+                THE VISION BOARD <span className="text-[10px] py-1 px-2 border border-red-500 text-red-500 rounded ml-2 align-middle font-mono uppercase tracking-[0.1em]" title="Your browser is missing WebGL support. High-Fidelity 2D mode active.">2D HIGH-FIDELITY</span>
+              </h1>
+              <h2 className="text-sm font-mono text-[#ffcc00] mt-1 opacity-80 tracking-[0.25em]">
+                LIVE INDEX & REALITY MATRIX | {agents.length || 6} NODES
+              </h2>
+              
+              {selectedAgent && (
+                 <div 
+                   style={{ borderColor: selectedAgent.color }}
+                   className="mt-6 p-4 bg-black/85 border border-[#ffcc00]/20 rounded-lg backdrop-blur-md max-w-sm shadow-xl shadow-black/80 pointer-events-auto"
+                 >
+                   <div className="flex items-center gap-2 mb-2">
+                     <div className="w-2.5 h-2.5 rounded-full animate-pulse" style={{ backgroundColor: selectedAgent.color }} />
+                     <h3 className="text-lg font-black uppercase text-white tracking-widest">{selectedAgent.name}</h3>
+                   </div>
+                   <div className="grid grid-cols-2 gap-y-2 gap-x-4 text-xs font-mono">
+                      <div className="text-gray-500 text-[10px] uppercase">ROLE</div>
+                      <div className="text-white text-right text-[11px] truncate">{selectedAgent.role}</div>
+                      <div className="text-gray-500 text-[10px] uppercase">STATUS</div>
+                      <div className="text-[#00ffcc] text-right font-bold text-[11px] uppercase">{selectedAgent.status}</div>
+                   </div>
+                   <div className="mt-4 flex flex-col gap-2">
+                     {selectedAgent.url && (
+                       <button
+                         onClick={() => window.open(selectedAgent.url, '_blank')}
+                         className="w-full py-2 bg-white/10 hover:bg-white/20 transition-colors uppercase font-mono text-[9px] tracking-widest border border-white/20"
+                       >
+                         VIEW GITHUB REPO
+                       </button>
+                     )}
+                     {selectedAgent.vercelUrl && (
+                       <button
+                         onClick={() => window.open(selectedAgent.vercelUrl, '_blank')}
+                         className="w-full py-2 bg-[#00ffcc]/10 hover:bg-[#00ffcc]/20 transition-colors uppercase font-mono text-[9px] tracking-widest border border-[#00ffcc]/30 text-[#00ffcc]"
+                       >
+                         LAUNCH VERCEL DEPLOY
+                       </button>
+                     )}
+                   </div>
+                 </div>
+              )}
+            </div>
+
+            <div className="pointer-events-auto flex flex-col items-end gap-2 bg-black/60 border border-amber-500/10 p-4 rounded text-right">
+               <span className="text-[10px] text-amber-500 font-mono uppercase tracking-widest">3D Context Unavailable</span>
+               <p className="text-[9px] text-gray-400 font-mono max-w-xs leading-relaxed uppercase">
+                  Hardware acceleration is restricted. Rendered interactive 2D Ecosystem Board. Hover nodes to inspect, click to bind active view deck!
+               </p>
+               <button
+                 onClick={() => setShowMap(!showMap)}
+                 className="mt-2 px-4 py-1.5 bg-blue-500/15 hover:bg-blue-500/35 border border-blue-500/50 text-blue-400 font-mono text-[9px] tracking-widest transition-all rounded uppercase"
+               >
+                 {showMap ? 'HIDE MAP' : 'OPEN COLOURED THUMBNAILS'}
+               </button>
+            </div>
+          </div>
+
+          {/* 2D Constellation Vector map */}
+          <div className="absolute inset-0 flex items-center justify-center pointer-events-none mt-20">
+            <div className="relative w-[95%] h-[75%] max-w-5xl border border-[rgba(255,204,0,0.15)] bg-black/25 rounded-lg pointer-events-auto overflow-hidden shadow-[inset_0_0_30px_rgba(255,204,0,0.03)]">
+               <div className="absolute inset-0 bg-[linear-gradient(rgba(18,16,16,0)_50%,_rgba(0,0,0,0.25)_50%),_linear-gradient(90deg,_rgba(255,204,0,0.02),rgba(0,255,204,0.01),rgba(0,0,255,0.04))] bg-[size:100%_4px,_3px_100%] pointer-events-none z-10" />
+
+               {/* Central Core */}
+               <div className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 flex flex-col items-center justify-center z-1 pointer-events-none">
+                  <div className="w-36 h-36 rounded-full border border-dashed border-[#ffcc00]/20 flex items-center justify-center animate-[spin_60s_linear_infinite]" />
+                  <div className="absolute w-44 h-44 rounded-full border border-dashed border-[#ffcc00]/5 animate-[spin_80s_linear_infinite_reverse]" />
+                  <div className="absolute w-14 h-14 rounded-full bg-[#ffcc00]/5 border border-[#ffcc00]/30 flex items-center justify-center">
+                     <div className="w-2 h-2 rounded-full bg-[#ffcc00] animate-pulse" />
+                  </div>
+                  <span className="absolute mt-24 text-[8px] font-mono text-[#ffcc00] tracking-widest uppercase opacity-60">NEXUS CORE</span>
+               </div>
+
+               {/* Circular constellation grid */}
+               <svg className="absolute inset-0 w-full h-full pointer-events-none z-0">
+                 <defs>
+                   <linearGradient id="neonGradientLineEcosystem" x1="0%" y1="0%" x2="100%" y2="100%">
+                     <stop offset="0%" stopColor="#ffcc00" stopOpacity="0.4" />
+                     <stop offset="100%" stopColor="#aa00ff" stopOpacity="0.05" />
+                   </linearGradient>
+                 </defs>
+                 {agents.map((agent, i) => {
+                   const angle = (i * 2 * Math.PI) / (agents.length || 1);
+                   const x = 50 + 26 * Math.cos(angle);
+                   const y = 50 + 32 * Math.sin(angle);
+                   return (
+                     <line 
+                       key={`line-ecosystem-${agent.id}`}
+                       x1="50%" y1="50%" x2={`${x}%`} y2={`${y}%`}
+                       stroke="url(#neonGradientLineEcosystem)"
+                       strokeWidth={1}
+                       className="opacity-50"
+                     />
+                   );
+                 })}
+               </svg>
+
+               {/* Interactive orbiting buttons */}
+               {agents.map((agent, i) => {
+                 const angle = (i * 2 * Math.PI) / (agents.length || 1);
+                 const x = 50 + 26 * Math.cos(angle);
+                 const y = 50 + 32 * Math.sin(angle);
+                 const isSelected = selectedAgent?.id === agent.id;
+
+                 return (
+                   <div 
+                     key={`node-ecosystem-div-${agent.id}`}
+                     style={{ left: `${x}%`, top: `${y}%` }}
+                     className="absolute -translate-x-1/2 -translate-y-1/2 z-20 group"
+                   >
+                      <button 
+                        onClick={() => setSelectedAgent(agent)}
+                        style={{ 
+                          borderColor: agent.color, 
+                          boxShadow: isSelected ? `0 0 15px ${agent.color}` : `0 0 8px ${agent.color}22` 
+                        }}
+                        className={`relative rounded-full border bg-black/95 flex items-center justify-center transition-all hover:scale-130 focus:outline-none ${isSelected ? 'w-9 h-9' : 'w-7 h-7'}`}
+                      >
+                         <div 
+                           style={{ backgroundColor: agent.color }}
+                           className={`rounded-full ${isSelected ? 'w-3.5 h-3.5 animate-pulse' : 'w-1.5 h-1.5 animate-ping'}`} 
+                         />
+                      </button>
+
+                      <div className="absolute left-1/2 -translate-x-1/2 top-11 w-44 bg-black/95 border border-white/20 p-2 rounded shadow-2xl scale-0 group-hover:scale-100 transition-transform origin-top z-50 pointer-events-none">
+                         <h3 className="text-[10px] font-black uppercase text-white truncate tracking-wider mb-1" style={{ color: agent.color }}>{agent.name}</h3>
+                         <p className="text-[9px] font-mono text-gray-300 leading-tight block truncate">STACK: {agent.role}</p>
+                         <div className="mt-1 border-t border-white/10 pt-1 flex justify-between items-center text-[8px] font-mono">
+                            <span className="text-gray-500 uppercase">NODE #{i+1}</span>
+                            <span className="text-green-400 uppercase text-[7px]">OPERATIONAL</span>
+                         </div>
+                      </div>
+                   </div>
+                 );
+               })}
+            </div>
+          </div>
+
+          {/* Coloured Thumbnails Grid */}
+          {showMap && (
+            <div className="absolute bottom-4 right-4 w-full md:w-[600px] p-4 z-40 pointer-events-none">
+              <div className="pointer-events-auto bg-black/90 backdrop-blur-xl border border-white/20 p-4 rounded-xl shadow-[0_0_50px_rgba(255,204,0,0.15)]">
+                 <div className="flex justify-between items-center mb-4 border-b border-white/10 pb-2 border-dashed">
+                    <h3 className="font-mono text-[10px] text-[#ffcc00] uppercase tracking-widest mb-1 shadow-[0_0_10px_rgba(255,255,255,0.1)]">Ecosystem Nodes (2D Slider deck)</h3>
+                    <button onClick={() => setShowMap(false)} className="text-gray-400 hover:text-white">&times;</button>
+                 </div>
+                 
+                 <div className="overflow-x-auto flex gap-4 pb-2 snap-x hide-scrollbar">
+                    {agents.map(agent => (
+                      <div 
+                        key={`fallback-thumb-${agent.id}`}
+                        onClick={() => setSelectedAgent(agent)}
+                        className="snap-start flex-shrink-0 w-36 h-24 bg-white/5 border hover:bg-white/10 transition-colors border-white/10 rounded overflow-hidden relative cursor-pointer group flex flex-col justify-end p-2"
+                        style={{ borderBottomWidth: 3, borderBottomColor: agent.color }}
+                      >
+                          <div className="absolute inset-0 bg-gradient-to-t from-black/95 via-black/40 to-transparent z-10" />
+                          <div className="absolute top-2 right-2 w-1.5 h-1.5 rounded-full z-20" style={{ backgroundColor: agent.color, boxShadow: `0 0 10px ${agent.color}` }} />
+                          <div className="relative z-20">
+                             <p className="text-[9px] font-black uppercase text-white truncate drop-shadow-md">{agent.name}</p>
+                             <p className="text-[8px] font-mono text-gray-300 uppercase truncate" style={{ color: agent.color }}>{agent.role}</p>
+                          </div>
+                      </div>
+                    ))}
+                 </div>
+              </div>
+            </div>
+          )}
+        </>
+      )}
+
+      {isWebGL && (
+        <>
+          {/* 2D Overlay HUD */}
+          {introDone && (
         <motion.div 
           initial={{ opacity: 0 }} 
           animate={{ opacity: 1 }}
@@ -246,9 +448,24 @@ export default function EcosystemGalaxy() {
                     <div className="text-gray-500">STATUS</div>
                     <div className="text-white text-right">{selectedAgent.status}</div>
                  </div>
-                 <button className="mt-4 w-full py-2 bg-white/10 hover:bg-white/20 transition-colors uppercase font-mono text-[10px] tracking-widest border border-white/20">
-                   INTERACT WITH AGENT
-                 </button>
+                 <div className="mt-4 flex flex-col gap-2">
+                   {selectedAgent.url && (
+                     <button
+                       onClick={() => window.open(selectedAgent.url, '_blank')}
+                       className="w-full py-2 bg-white/10 hover:bg-white/20 transition-colors uppercase font-mono text-[10px] tracking-widest border border-white/20"
+                     >
+                       VIEW GITHUB REPO
+                     </button>
+                   )}
+                   {selectedAgent.vercelUrl && (
+                     <button
+                       onClick={() => window.open(selectedAgent.vercelUrl, '_blank')}
+                       className="w-full py-2 bg-[#00ffcc]/10 hover:bg-[#00ffcc]/20 transition-colors uppercase font-mono text-[10px] tracking-widest border border-[#00ffcc]/30 text-[#00ffcc]"
+                     >
+                       LAUNCH VERCEL DEPLOY
+                     </button>
+                   )}
+                 </div>
                </motion.div>
             )}
           </div>
@@ -292,7 +509,7 @@ export default function EcosystemGalaxy() {
                 </div>
                 
                 <div className="overflow-x-auto flex gap-4 pb-4 snap-x hide-scrollbar">
-                   {ECOSYSTEM_AGENTS.map(agent => (
+                   {agents.map(agent => (
                      <div 
                        key={agent.id}
                        onClick={() => setSelectedAgent(agent)}
@@ -315,6 +532,7 @@ export default function EcosystemGalaxy() {
          )}
       </AnimatePresence>
 
+<WebGLErrorBoundary fallback={<div className="flex-1 flex items-center justify-center text-xs font-mono text-orange-500 uppercase tracking-widest bg-black">WebGL Crash Detected. Activating 2D HUD Fallback...</div>}>
       <Canvas camera={{ position: [0, 2, 10] }} className="absolute inset-0">
         <XR store={store}>
           <color attach="background" args={['#010103']} />
@@ -327,11 +545,14 @@ export default function EcosystemGalaxy() {
             <IntroAnimation onIntroComplete={() => setIntroDone(true)} />
           ) : (
              <group>
-                <AgentGalaxy agents={ECOSYSTEM_AGENTS} selectedAgent={selectedAgent} onSelectAgent={setSelectedAgent} />
+                <AgentGalaxy agents={agents} selectedAgent={selectedAgent} onSelectAgent={setSelectedAgent} />
              </group>
           )}
         </XR>
       </Canvas>
+      </WebGLErrorBoundary>
+        </>
+      )}
     </div>
   );
 }

@@ -5,11 +5,21 @@ import ConstructionSimulator from './rooms/ConstructionSimulator';
 import PrintLab from './rooms/PrintLab';
 import { motion, AnimatePresence } from 'motion/react';
 import { xrStore } from './xrStore';
+import { toggleForce2DMode, resetWebGLStatus, useWebGLAvailable } from './webglCheck';
 
 export default function App() {
+  const isWebGL = useWebGLAvailable();
   const [currentRoom, setCurrentRoom] = useState<string>(() => {
     if (typeof window !== 'undefined') {
-      return localStorage.getItem('nexus_current_room') || 'hub';
+      try {
+        const stored = localStorage.getItem('nexus_current_room');
+        if (stored && ['hub', 'forge', 'ecosystem', 'construction_sim', 'print_lab'].includes(stored)) {
+            return stored;
+        }
+        return 'hub';
+      } catch (e) {
+        return 'hub';
+      }
     }
     return 'hub';
   });
@@ -21,17 +31,26 @@ export default function App() {
        try { state.session.end(); } catch(e) { console.error(e); }
     }
     setCurrentRoom('hub');
-    localStorage.setItem('nexus_current_room', 'hub');
+    try {
+      localStorage.setItem('nexus_current_room', 'hub');
+    } catch(e) {}
   };
 
   const navigateTo = (room: string) => {
     setCurrentRoom(room);
-    localStorage.setItem('nexus_current_room', room);
+    try {
+      localStorage.setItem('nexus_current_room', room);
+    } catch(e) {}
   };
 
   return (
     <div className="w-full h-screen bg-[#050505] text-white overflow-hidden relative font-sans">
       
+        {/* DEBUG OVERLAY */}
+        <div className="fixed top-0 left-0 z-[9999] p-2 bg-red-500 text-white font-mono text-xs pointer-events-none opacity-50">
+          React Mounted | Room: {currentRoom} | WebGL: {isWebGL ? 'ON' : 'OFF'}
+        </div>
+
         {/* HUB VIEW */}
         <AnimatePresence mode="wait">
         {currentRoom === 'hub' && (
@@ -117,30 +136,78 @@ export default function App() {
                    </div>
                 </button>
               </div>
+
+              {/* Graphics & Driver GPU Failover Override Deck */}
+              <div className="mt-16 flex flex-col md:flex-row items-center justify-center gap-4 bg-black/60 border border-white/15 py-3 px-6 rounded-lg pointer-events-auto backdrop-blur-md max-w-[95%] text-center">
+                <span className="text-[10px] font-mono tracking-widest text-gray-500 uppercase flex items-center gap-2">
+                  <span className={`w-2 h-2 rounded-full ${isWebGL ? 'bg-green-400' : 'bg-orange-500 animate-pulse'}`} />
+                  GPU ACCELERATED PIPELINE:
+                </span>
+                {isWebGL ? (
+                  <span className="text-xs font-mono font-bold text-[#00ffcc] uppercase tracking-wider">✓ 3D WebGL MODE ACTIVE</span>
+                ) : (
+                  <span className="text-xs font-mono font-bold text-orange-400 uppercase tracking-wider">⚠ 2D BLUEPRINT ENGINE ACTIVE (AUTOMATIC DRIVER FAILOVER ENABLED)</span>
+                )}
+
+                <div className="hidden md:block w-[1px] h-4 bg-white/20" />
+
+                {isWebGL ? (
+                  <button
+                    onClick={() => toggleForce2DMode(true)}
+                    className="px-3 py-1 bg-white/5 hover:bg-red-500/10 hover:text-red-400 border border-white/10 hover:border-red-500/30 text-[9px] font-mono rounded font-bold uppercase tracking-wider transition-all"
+                    title="If you see errors about canvas context failure, click to force fallback 2D blueprints mode safely."
+                  >
+                    Force Safe 2D Blueprint Mode
+                  </button>
+                ) : (
+                  <button
+                    onClick={() => {
+                      resetWebGLStatus();
+                    }}
+                    className="px-3 py-1 bg-orange-500/10 hover:bg-[#00ffcc]/10 hover:text-[#00ffcc] border border-orange-500/30 hover:border-[#00ffcc]/40 text-[9px] font-mono rounded font-gray font-bold uppercase tracking-wider transition-all"
+                  >
+                    Clear Override / Retest 3D Renderer
+                  </button>
+                )}
+
+                {typeof window !== 'undefined' && localStorage.getItem('webgl_rendering_failed') === 'true' && (
+                  <span className="text-[9px] font-mono text-red-400 uppercase tracking-widest bg-red-950/40 border border-red-500/20 px-2 py-0.5 rounded animate-pulse">
+                    ⚠ GPU Failure Flagged
+                  </span>
+                )}
+              </div>
           </motion.div>
         )}
         </AnimatePresence>
 
-        {/* ROOM VIEWS - HIDDEN/SHOWN VIA CSS TO PRESERVE STATE & PREVENT WEBGL RESIZEOBSERVER CRASH (0x0 SIZE) */}
-        <div style={{ visibility: currentRoom === 'forge' ? 'visible' : 'hidden', opacity: currentRoom === 'forge' ? 1 : 0, pointerEvents: currentRoom === 'forge' ? 'auto' : 'none' }} className="w-full h-full absolute inset-0 z-10 transition-opacity">
-             <button onClick={handleExit} className="absolute bottom-6 left-6 z-50 text-[#00ffcc] font-mono text-[10px] hover:bg-[#00ffcc]/10 uppercase tracking-widest bg-black/50 px-4 py-2 border border-[#00ffcc]/30 backdrop-blur-md rounded transition-colors">&lt; EXIT / RETURN TO NEXUS</button>
-             <ThirdEyeForge />
-        </div>
+        {/* ROOM VIEWS - CONDITIONALLY RENDERED TO CONSERVE WEBGL CONTEXTS AND PREVENT RENDERING CRASHES */}
+        {currentRoom === 'forge' && (
+          <div className="w-full h-full absolute inset-0 z-10 animate-in fade-in duration-300">
+              <button onClick={handleExit} className="absolute bottom-6 left-6 z-50 text-[#00ffcc] font-mono text-[10px] hover:bg-[#00ffcc]/10 uppercase tracking-widest bg-black/50 px-4 py-2 border border-[#00ffcc]/30 backdrop-blur-md rounded transition-colors">&lt; EXIT / RETURN TO NEXUS</button>
+              <ThirdEyeForge />
+          </div>
+        )}
 
-        <div style={{ visibility: currentRoom === 'ecosystem' ? 'visible' : 'hidden', opacity: currentRoom === 'ecosystem' ? 1 : 0, pointerEvents: currentRoom === 'ecosystem' ? 'auto' : 'none' }} className="w-full h-full absolute inset-0 z-10 transition-opacity">
-             <button onClick={handleExit} className="absolute bottom-6 left-6 z-50 text-[#ffcc00] font-mono text-[10px] hover:bg-[#ffcc00]/10 uppercase tracking-widest bg-black/50 px-4 py-2 border border-[#ffcc00]/30 backdrop-blur-md rounded transition-colors">&lt; EXIT / RETURN TO NEXUS</button>
-             <EcosystemGalaxy />
-        </div>
+        {currentRoom === 'ecosystem' && (
+          <div className="w-full h-full absolute inset-0 z-10 animate-in fade-in duration-300">
+              <button onClick={handleExit} className="absolute bottom-6 left-6 z-50 text-[#ffcc00] font-mono text-[10px] hover:bg-[#ffcc00]/10 uppercase tracking-widest bg-black/50 px-4 py-2 border border-[#ffcc00]/30 backdrop-blur-md rounded transition-colors">&lt; EXIT / RETURN TO NEXUS</button>
+              <EcosystemGalaxy />
+          </div>
+        )}
 
-        <div style={{ visibility: currentRoom === 'construction_sim' ? 'visible' : 'hidden', opacity: currentRoom === 'construction_sim' ? 1 : 0, pointerEvents: currentRoom === 'construction_sim' ? 'auto' : 'none' }} className="w-full h-full absolute inset-0 z-10 transition-opacity">
-             <button onClick={handleExit} className="absolute bottom-6 left-6 z-50 text-orange-500 font-mono text-[10px] hover:bg-orange-500/10 uppercase tracking-widest bg-black/50 px-4 py-2 border border-orange-500/30 backdrop-blur-md rounded transition-colors">&lt; EXIT / RETURN TO NEXUS</button>
-             <ConstructionSimulator />
-        </div>
+        {currentRoom === 'construction_sim' && (
+          <div className="w-full h-full absolute inset-0 z-10 animate-in fade-in duration-300">
+              <button onClick={handleExit} className="absolute bottom-6 left-6 z-50 text-orange-500 font-mono text-[10px] hover:bg-orange-500/10 uppercase tracking-widest bg-black/50 px-4 py-2 border border-orange-500/30 backdrop-blur-md rounded transition-colors">&lt; EXIT / RETURN TO NEXUS</button>
+              <ConstructionSimulator />
+          </div>
+        )}
 
-        <div style={{ visibility: currentRoom === 'print_lab' ? 'visible' : 'hidden', opacity: currentRoom === 'print_lab' ? 1 : 0, pointerEvents: currentRoom === 'print_lab' ? 'auto' : 'none' }} className="w-full h-full absolute inset-0 z-10 transition-opacity">
-             <button onClick={handleExit} className="absolute bottom-6 left-6 z-50 text-blue-500 font-mono text-[10px] hover:bg-blue-500/10 uppercase tracking-widest bg-black/50 px-4 py-2 border border-blue-500/30 backdrop-blur-md rounded transition-colors">&lt; EXIT / RETURN TO NEXUS</button>
-             <PrintLab />
-        </div>
+        {currentRoom === 'print_lab' && (
+          <div className="w-full h-full absolute inset-0 z-10 animate-in fade-in duration-300">
+              <button onClick={handleExit} className="absolute bottom-6 left-6 z-50 text-blue-500 font-mono text-[10px] hover:bg-blue-500/10 uppercase tracking-widest bg-black/50 px-4 py-2 border border-blue-500/30 backdrop-blur-md rounded transition-colors">&lt; EXIT / RETURN TO NEXUS</button>
+              <PrintLab />
+          </div>
+        )}
     </div>
   );
 }

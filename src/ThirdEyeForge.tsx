@@ -6,6 +6,8 @@ import { xrStore as store } from './xrStore';
 import { EffectComposer, Bloom } from '@react-three/postprocessing';
 import * as THREE from 'three';
 import { GoogleGenAI } from '@google/genai';
+import { useWebGLAvailable } from './webglCheck';
+import { WebGLErrorBoundary } from './components/WebGLErrorBoundary';
 
 import AgencyPath, { NodeData } from './AgencyPath';
 import SentientHands from './SentientHands';
@@ -111,14 +113,52 @@ function AmbientParticles() {
 export default function ThirdEyeForge() {
   const [nodes, setNodes] = useState<NodeData[]>(INITIAL_NODES);
   const [qiIntensity, setQiIntensity] = useState(0.5);
-  const [status, setStatus] = useState("DRAG RAW BATTLE WOUNDS TO THE CENTRAL FORGE. TRI-POLYMER BINDING ENGAGED.");
+  const [status, setStatus] = useState("SYNCING WITH MCP ORGANISM... DRAG RAW ATOMS TO THE CENTRAL FORGE.");
   const [flashQuote, setFlashQuote] = useState<string | null>(null);
   const [inputText, setInputText] = useState("");
   const [memoryType, setMemoryType] = useState('trauma');
   const [isSynthesizing, setIsSynthesizing] = useState(false);
+  const [totalAtoms, setTotalAtoms] = useState<number>(INITIAL_NODES.length);
 
   const [themeInput, setThemeInput] = useState("");
   const [isGenerating, setIsGenerating] = useState(false);
+  const [pendingSyntheses, setPendingSyntheses] = useState<number[]>([]);
+  const [isMenuOpen, setIsMenuOpen] = useState(false);
+
+  useEffect(() => {
+    async function loadAtoms() {
+      try {
+        const res = await fetch('https://fanz-github-mcp.vercel.app/brain/atoms');
+        if (!res.ok) return;
+        const data = await res.json();
+        const atoms = data.atoms || data;
+        
+        if (Array.isArray(atoms) && atoms.length > 0) {
+          setTotalAtoms(atoms.length);
+          // Load a subset (e.g. 15 random atoms) into the active visual forge to prevent physics overload
+          const subset = atoms.sort(() => 0.5 - Math.random()).slice(0, 15);
+          
+          const loadedNodes: NodeData[] = subset.map((atom: any, i: number) => {
+            return {
+              position: new THREE.Vector3((Math.random() - 0.5) * 8, Math.random() * 3 + 1, (Math.random() - 0.5) * 8),
+              label: atom.title || "MCP Atom",
+              type: atom.category?.toLowerCase() === 'philosophy' ? 'lesson' : 
+                    atom.category?.toLowerCase() === 'theory' ? 'escapeloop' : 'lesson',
+              quote: atom.core || atom.title,
+              healed: atom.confidence > 0.8 // high confidence atoms start healed/synthesized
+            };
+          });
+          
+          setNodes(prev => [...INITIAL_NODES, ...loadedNodes]);
+          setStatus(`MCP SYNC COMPLETE. ${atoms.length} LIVING ATOMS DETECTED.`);
+        }
+      } catch (e) {
+        console.error("Failed to load atoms", e);
+        setStatus("MCP SYNC FAILED. USING LOCAL CORE.");
+      }
+    }
+    loadAtoms();
+  }, []);
 
   const handleCreateMemory = (e: React.FormEvent) => {
     e.preventDefault();
@@ -229,7 +269,7 @@ export default function ThirdEyeForge() {
               setFlashQuote(finalQuote.toUpperCase());
               setTimeout(() => setFlashQuote(null), 4000);
               
-              spatialAudio.playFlare(newNodes[index].position);
+              try { spatialAudio.playFlare(newNodes[index].position); } catch(e) {}
           }
           return newNodes;
       });
@@ -281,6 +321,65 @@ export default function ThirdEyeForge() {
     triggerHeal(index);
   };
 
+  useEffect(() => {
+    if (!isSynthesizing && pendingSyntheses.length > 0) {
+      const nextIndex = pendingSyntheses[0];
+      setPendingSyntheses(prev => prev.slice(1));
+      triggerHeal(nextIndex);
+    }
+  }, [isSynthesizing, pendingSyntheses, triggerHeal]);
+
+  useEffect(() => {
+    // Spatial synth drone removed as per user request to remove buzzing
+  }, [nodes]);
+
+  const handleSynthesizeAll = () => {
+    const unhealedIndices = nodes.reduce((acc, curr, i) => {
+        if (!curr.healed) acc.push(i);
+        return acc;
+    }, [] as number[]);
+    if (unhealedIndices.length > 0) {
+        setPendingSyntheses(unhealedIndices);
+    } else {
+        setStatus("ALL CORE ATOMS ALREADY SYNTHESIZED.");
+    }
+  };
+
+  const handleSaveSession = () => {
+    try {
+      const data = nodes.map(n => ({
+        ...n,
+        position: { x: n.position.x, y: n.position.y, z: n.position.z }
+      }));
+      localStorage.setItem('third_eye_forge_session', JSON.stringify(data));
+      setStatus('SESSION SAVED TO LOCAL STORAGE.');
+    } catch (e) {
+      console.error(e);
+      setStatus('FAILED TO SAVE SESSION.');
+    }
+  };
+
+  const handleLoadSession = () => {
+    try {
+      const saved = localStorage.getItem('third_eye_forge_session');
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        const loadedNodes = parsed.map((n: any) => ({
+           ...n,
+           position: new THREE.Vector3(n.position.x, n.position.y, n.position.z)
+        }));
+        setNodes(loadedNodes);
+        setTotalAtoms(loadedNodes.length);
+        setStatus('SESSION LOADED FROM LOCAL STORAGE.');
+      } else {
+        setStatus('NO SAVED SESSION FOUND.');
+      }
+    } catch (e) {
+      console.error(e);
+      setStatus('FAILED TO LOAD SESSION.');
+    }
+  };
+
   // Decay Qi Intensity like water settling back to baseline
   useEffect(() => {
     const interval = setInterval(() => {
@@ -299,6 +398,224 @@ export default function ThirdEyeForge() {
     }
   };
 
+  const isWebGL = useWebGLAvailable();
+
+  if (!isWebGL) {
+    return (
+      <div className="w-full h-screen bg-[#020204] text-white flex flex-col font-sans overflow-hidden relative">
+        {/* Cyber-Organic HUD */}
+        <div className="absolute top-0 left-0 w-full p-6 z-[15] pointer-events-none flex justify-between items-start">
+          <div className="pointer-events-auto">
+            <h1 className="text-3xl md:text-4xl font-black tracking-tighter text-[#00ffcc] drop-shadow-[0_0_8px_rgba(0,255,204,0.8)]">
+              THIRD EYE FORGE <span className="text-[10px] py-1 px-2 border border-red-500 text-red-500 rounded ml-2 align-middle font-mono uppercase tracking-[0.1em]" title="Your browser is missing WebGL support. High-Fidelity 2D mode active.">2D HIGH-FIDELITY</span>
+            </h1>
+            <h2 className="text-sm font-mono text-[#00ffcc] mt-1 opacity-80 tracking-[0.25em]">
+              LIVING ORGANISM CORE | {totalAtoms} ATOMS
+            </h2>
+            <div className="mt-4 p-3 bg-black/80 border border-cyan-500/30 rounded backdrop-blur-sm max-w-lg shadow-lg shadow-[#00ffcc]/10">
+              <p className="text-xs font-mono text-[#00ffcc] opacity-90 uppercase leading-snug">{status}</p>
+            </div>
+            
+            <button 
+                onClick={() => setIsMenuOpen(!isMenuOpen)}
+                className="mt-4 pointer-events-auto px-4 py-2 bg-black/60 border border-[#00ffcc]/50 text-[#00ffcc] font-mono tracking-widest text-xs transition-colors hover:bg-[#00ffcc]/10"
+            >
+                {isMenuOpen ? "HIDE CONTROLS" : "SHOW CONTROLS"}
+            </button>
+
+            {isMenuOpen && (
+              <div className="mt-4 max-w-md pointer-events-auto bg-black/80 border border-[#00ffcc]/30 p-4 rounded backdrop-blur-sm max-h-[60vh] overflow-y-auto custom-scrollbar">
+                <form onSubmit={handleCreateMemory} className="flex flex-col gap-2">
+                  <label className="text-xs font-mono tracking-widest text-[#00ffcc] opacity-70">INPUT RAW EXPERIENCE:</label>
+                  <div className="flex gap-2">
+                    <select 
+                      value={memoryType} 
+                      onChange={e => setMemoryType(e.target.value)}
+                      className="bg-black/60 border border-[#00ffcc]/40 text-white p-2 rounded font-mono text-xs focus:outline-none focus:border-[#00ffcc]"
+                    >
+                      <option value="trauma">Trauma</option>
+                      <option value="regret">Regret</option>
+                      <option value="fear">Fear</option>
+                      <option value="lesson">Lesson</option>
+                    </select>
+                    <textarea 
+                      value={inputText}
+                      onChange={(e) => setInputText(e.target.value)}
+                      className="resize-none flex-1 bg-black/60 border border-[#00ffcc]/40 text-white p-3 rounded font-mono text-sm focus:outline-none focus:border-[#00ffcc] shadow-[inset_0_0_10px_rgba(0,255,204,0.1)] transition-colors"
+                      rows={2}
+                      placeholder={`Describe your ${memoryType}...`}
+                    />
+                  </div>
+                  <button 
+                    type="submit" 
+                    disabled={!inputText.trim()}
+                    className="mt-2 py-2 bg-[#00ffcc]/10 hover:bg-[#00ffcc]/20 border border-[#00ffcc]/50 text-[#00ffcc] font-mono tracking-widest text-xs transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
+                    CREATE RAW ATOM (UNHEALED)
+                  </button>
+                </form>
+
+                <form onSubmit={handleGenerateMemory} className="mt-6 flex flex-col gap-2 border-t border-[#00ffcc]/20 pt-4">
+                  <label className="text-xs font-mono tracking-widest text-[#ffcc00] opacity-70">GENERATE SCENARIO (AI):</label>
+                  <div className="flex gap-2">
+                    <input 
+                      type="text"
+                      value={themeInput}
+                      onChange={(e) => setThemeInput(e.target.value)}
+                      className="flex-1 bg-black/60 border border-[#ffcc00]/40 text-white p-2 rounded font-mono text-xs focus:outline-none focus:border-[#ffcc00] shadow-[inset_0_0_10px_rgba(255,204,0,0.1)] transition-colors"
+                      placeholder="E.g. A difficult decision at work..."
+                    />
+                  </div>
+                  <button 
+                    type="submit" 
+                    disabled={!themeInput.trim() || isGenerating}
+                    className="py-2 bg-[#ffcc00]/10 hover:bg-[#ffcc00]/20 border border-[#ffcc00]/50 text-[#ffcc00] font-mono tracking-widest text-xs transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
+                    {isGenerating ? "GENERATING..." : "GENERATE AI MEMORY"}
+                  </button>
+                </form>
+
+                <div className="mt-6 flex gap-2 border-t border-[#00ffcc]/20 pt-4">
+                  <button 
+                    onClick={handleSaveSession}
+                    className="flex-1 px-4 py-2 bg-[#00ffcc]/5 hover:bg-[#00ffcc]/20 border border-[#00ffcc]/40 text-[#00ffcc] font-mono text-xs uppercase tracking-widest transition-colors shadow-[0_0_8px_rgba(0,255,204,0.1)]"
+                  >
+                    SAVE SESSION
+                  </button>
+                  <button 
+                    onClick={handleLoadSession}
+                    className="flex-1 px-4 py-2 bg-white/5 hover:bg-white/10 border border-white/20 text-white/80 font-mono text-xs uppercase tracking-widest transition-colors"
+                  >
+                    LOAD SESSION
+                  </button>
+                </div>
+                
+                <div className="mt-2 flex">
+                  <button
+                    onClick={handleSynthesizeAll}
+                    disabled={isSynthesizing || pendingSyntheses.length > 0 || nodes.every(n => n.healed)}
+                    className="w-full px-4 py-2 bg-[#ff00ff]/10 hover:bg-[#ff00ff]/20 border border-[#ff00ff]/50 text-[#ff00ff] font-mono tracking-widest text-xs transition-colors disabled:opacity-50 disabled:cursor-not-allowed shadow-[0_0_8px_rgba(255,0,255,0.15)]"
+                  >
+                    {pendingSyntheses.length > 0 ? `SYNTHESIZING (${pendingSyntheses.length} REMAINING)...` : "SYNTHESIZE ALL"}
+                  </button>
+                </div>
+              </div>
+            )}
+          </div>
+          
+          <div className="pointer-events-auto flex flex-col items-end gap-2 bg-black/60 border border-cyan-500/20 p-4 rounded text-right">
+             <span className="text-[10px] text-cyan-400 font-mono uppercase tracking-widest">3D Context Inactive</span>
+             <p className="text-[9px] text-gray-400 font-mono max-w-xs leading-relaxed uppercase">
+                Chrome failed to initialize 3D canvas. Running in fully-interactive 2D Vector grid. Open in a new tab or enable hardware acceleration in browser settings!
+             </p>
+          </div>
+        </div>
+
+        {/* 2D Grid Representation */}
+        <div className="absolute inset-0 flex items-center justify-center pointer-events-none mt-20">
+          <div className="relative w-[95%] h-[75%] max-w-5xl border border-[rgba(0,255,204,0.15)] bg-black/25 rounded-lg pointer-events-auto overflow-hidden shadow-[0_0_30px_rgba(0,255,204,0.055)]">
+             <div className="absolute inset-0 bg-[linear-gradient(rgba(18,16,16,0)_50%,_rgba(0,0,0,0.25)_50%),_linear-gradient(90deg,_rgba(0,255,204,0.03),rgba(0,255,100,0.01),rgba(0,0,255,0.03))] bg-[size:100%_4px,_3px_100%] pointer-events-none z-10" />
+
+             {/* Central Synthesis Ring */}
+             <div className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 flex flex-col items-center justify-center z-1 pointer-events-none">
+                <div className={`w-32 h-32 rounded-full border border-dashed border-[#00ffcc]/30 flex items-center justify-center animate-[spin_40s_linear_infinite] ${qiIntensity > 1 ? 'border-[#00ffcc]' : ''}`} />
+                <div className="absolute w-28 h-28 rounded-full border border-[#00ffcc]/15 animate-[ping_4s_ease-in-out_infinite]" />
+                <div className="absolute w-12 h-12 rounded-full bg-[#00ffcc]/5 border border-[#00ffcc]/30 flex items-center justify-center">
+                   <div className="w-1.5 h-1.5 rounded-full bg-[#00ffcc] animate-pulse" />
+                </div>
+                <span className="absolute mt-20 text-[8px] font-mono text-[#00ffcc] tracking-widest uppercase opacity-60">FORGE CORE</span>
+             </div>
+
+             {/* SVG connection lanes! */}
+             <svg className="absolute inset-0 w-full h-full pointer-events-none z-0">
+               <defs>
+                 <linearGradient id="neonGradientLine" x1="0%" y1="0%" x2="100%" y2="100%">
+                   <stop offset="0%" stopColor="#00ffcc" stopOpacity="0.6" />
+                   <stop offset="100%" stopColor="#005577" stopOpacity="0.1" />
+                 </linearGradient>
+               </defs>
+               {nodes.flatMap((nodeS, firstIdx) => 
+                 nodes.slice(firstIdx + 1).map((nodeE, endIdx) => {
+                   const trueEndIdx = firstIdx + 1 + endIdx;
+                   if (firstIdx % 2 === 0 && trueEndIdx % 3 === 0) {
+                     let x1 = ((nodeS.position.x + 6) / 12) * 100;
+                     let y1 = ((nodeS.position.z + 6) / 12) * 100;
+                     let x2 = ((nodeE.position.x + 6) / 12) * 100;
+                     let y2 = ((nodeE.position.z + 6) / 12) * 100;
+                     return (
+                       <line 
+                         key={`line-2d-${firstIdx}-${trueEndIdx}`}
+                         x1={`${x1}%`} y1={`${y1}%`} x2={`${x2}%`} y2={`${y2}%`}
+                         stroke="url(#neonGradientLine)"
+                         strokeWidth={1}
+                         strokeDasharray={nodeS.healed && nodeE.healed ? 'none' : '3 3'}
+                       />
+                     );
+                   }
+                   return null;
+                 })
+               )}
+             </svg>
+
+             {/* Interactive Floating Nodes */}
+             {nodes.map((node, i) => {
+               let xPre = ((node.position.x + 6) / 12) * 100;
+               let yPre = ((node.position.z + 6) / 12) * 100;
+               const nodeColor = node.healed ? '#00ffcc' : 
+                                 node.type === 'trauma' ? '#ff3333' :
+                                 node.type === 'fear' ? '#ffaa00' :
+                                 node.type === 'regret' ? '#ff00ff' : '#00aaff';
+
+               return (
+                 <div 
+                   key={`node-2d-div-${i}`}
+                   style={{ left: `${Math.min(94, Math.max(6, xPre))}%`, top: `${Math.min(88, Math.max(12, yPre))}%` }}
+                   className="absolute -translate-x-1/2 -translate-y-1/2 z-20 group"
+                 >
+                    <button 
+                      onClick={() => handleNodeClick(i)}
+                      style={{ borderColor: nodeColor, boxShadow: `0 0 10px ${nodeColor}22` }}
+                      className="relative w-7 h-7 rounded-full border bg-black/95 flex items-center justify-center transition-all hover:scale-125 focus:outline-none"
+                    >
+                       <div 
+                         style={{ backgroundColor: nodeColor }}
+                         className={`w-2.5 h-2.5 rounded-full ${node.healed ? 'animate-pulse' : 'animate-ping'}`} 
+                       />
+                    </button>
+
+                    {/* Popover detailed label on hover */}
+                    <div className="absolute left-1/2 -translate-x-1/2 top-9 w-44 bg-black/95 border border-white/20 p-2 rounded shadow-2xl scale-0 group-hover:scale-100 transition-transform origin-top z-50 pointer-events-none">
+                       <h3 className="text-[10px] font-black uppercase text-white truncate tracking-wider mb-1" style={{ color: nodeColor }}>{node.label}</h3>
+                       <p className="text-[9px] font-mono text-gray-300 leading-tight">"{node.quote}"</p>
+                       <div className="mt-1 border-t border-white/10 pt-1 flex justify-between items-center text-[8px] font-mono">
+                          <span className="text-gray-500 uppercase">{node.type}</span>
+                          <span style={{ color: nodeColor }} className="uppercase">{node.healed ? 'SYNTHESIZED' : 'CLICK TO HEAL'}</span>
+                       </div>
+                    </div>
+                 </div>
+               );
+             })}
+          </div>
+        </div>
+
+        {flashQuote && (
+          <div className="absolute inset-0 flex items-center justify-center bg-black/85 z-55 p-6 text-center pointer-events-none animate-in fade-in duration-350">
+             <div className="max-w-2xl border-y border-[#00ffcc]/30 py-8 px-6">
+                <span className="text-xs font-mono text-[#00ffcc] tracking-widest uppercase mb-2 block">--- AGENCY ASSERTION COMPLETED ---</span>
+                <p className="text-xl md:text-2xl font-black text-white tracking-tight uppercase leading-relaxed font-sans mt-2">
+                   "{flashQuote}"
+                </p>
+             </div>
+          </div>
+        )}
+
+        <div className="absolute bottom-6 w-full text-center z-10 pointer-events-none">
+          <p className="font-mono text-xs tracking-[0.3em] text-white/40">These things don't do me — I do these things</p>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="w-full h-screen bg-[#020204] text-white flex flex-col font-sans overflow-hidden">
       
@@ -309,61 +626,97 @@ export default function ThirdEyeForge() {
             THIRD EYE FORGE
           </h1>
           <h2 className="text-sm font-mono text-[#00ffcc] mt-1 opacity-80 tracking-[0.25em]">
-            LIVING ORGANISM CORE | {nodes.length} ATOMS
+            LIVING ORGANISM CORE | {totalAtoms} ATOMS
           </h2>
           <div className="mt-4 p-3 bg-black/40 border border-cyan-500/30 rounded backdrop-blur-sm max-w-lg shadow-lg shadow-[#00ffcc]/10">
             <p className="text-xs font-mono text-[#00ffcc] opacity-90 uppercase leading-snug">{status}</p>
           </div>
 
-          <form onSubmit={handleCreateMemory} className="mt-6 flex flex-col gap-2 max-w-md pointer-events-auto">
-            <label className="text-xs font-mono tracking-widest text-[#00ffcc] opacity-70">INPUT RAW EXPERIENCE:</label>
-            <div className="flex gap-2">
-              <select 
-                value={memoryType} 
-                onChange={e => setMemoryType(e.target.value)}
-                className="bg-black/60 border border-[#00ffcc]/40 text-white p-2 rounded font-mono text-xs focus:outline-none focus:border-[#00ffcc]"
-              >
-                <option value="trauma">Trauma</option>
-                <option value="regret">Regret</option>
-                <option value="fear">Fear</option>
-                <option value="lesson">Lesson</option>
-              </select>
-              <textarea 
-                value={inputText}
-                onChange={(e) => setInputText(e.target.value)}
-                className="resize-none flex-1 bg-black/60 border border-[#00ffcc]/40 text-white p-3 rounded font-mono text-sm focus:outline-none focus:border-[#00ffcc] shadow-[inset_0_0_10px_rgba(0,255,204,0.1)] transition-colors"
-                rows={2}
-                placeholder={`Describe your ${memoryType}...`}
-              />
-            </div>
-            <button 
-              type="submit" 
-              disabled={!inputText.trim()}
-              className="mt-2 py-2 bg-[#00ffcc]/10 hover:bg-[#00ffcc]/20 border border-[#00ffcc]/50 text-[#00ffcc] font-mono tracking-widest text-xs transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-            >
-              CREATE RAW ATOM (UNHEALED)
-            </button>
-          </form>
+          <button 
+              onClick={() => setIsMenuOpen(!isMenuOpen)}
+              className="mt-4 pointer-events-auto px-4 py-2 bg-black/60 border border-[#00ffcc]/50 text-[#00ffcc] font-mono tracking-widest text-xs transition-colors hover:bg-[#00ffcc]/10"
+          >
+              {isMenuOpen ? "HIDE CONTROLS" : "SHOW CONTROLS"}
+          </button>
 
-          <form onSubmit={handleGenerateMemory} className="mt-4 flex flex-col gap-2 max-w-md pointer-events-auto border-t border-[#00ffcc]/20 pt-4">
-            <label className="text-xs font-mono tracking-widest text-[#ffcc00] opacity-70">GENERATE SCENARIO (AI):</label>
-            <div className="flex gap-2">
-              <input 
-                type="text"
-                value={themeInput}
-                onChange={(e) => setThemeInput(e.target.value)}
-                className="flex-1 bg-black/60 border border-[#ffcc00]/40 text-white p-2 rounded font-mono text-xs focus:outline-none focus:border-[#ffcc00] shadow-[inset_0_0_10px_rgba(255,204,0,0.1)] transition-colors"
-                placeholder="E.g. A difficult decision at work..."
-              />
+          {isMenuOpen && (
+            <div className="mt-4 max-w-md pointer-events-auto bg-black/40 border border-[#00ffcc]/30 p-4 rounded backdrop-blur-sm max-h-[60vh] overflow-y-auto custom-scrollbar">
+              <form onSubmit={handleCreateMemory} className="flex flex-col gap-2">
+                <label className="text-xs font-mono tracking-widest text-[#00ffcc] opacity-70">INPUT RAW EXPERIENCE:</label>
+                <div className="flex gap-2">
+                  <select 
+                    value={memoryType} 
+                    onChange={e => setMemoryType(e.target.value)}
+                    className="bg-black/60 border border-[#00ffcc]/40 text-white p-2 rounded font-mono text-xs focus:outline-none focus:border-[#00ffcc]"
+                  >
+                    <option value="trauma">Trauma</option>
+                    <option value="regret">Regret</option>
+                    <option value="fear">Fear</option>
+                    <option value="lesson">Lesson</option>
+                  </select>
+                  <textarea 
+                    value={inputText}
+                    onChange={(e) => setInputText(e.target.value)}
+                    className="resize-none flex-1 bg-black/60 border border-[#00ffcc]/40 text-white p-3 rounded font-mono text-sm focus:outline-none focus:border-[#00ffcc] shadow-[inset_0_0_10px_rgba(0,255,204,0.1)] transition-colors"
+                    rows={2}
+                    placeholder={`Describe your ${memoryType}...`}
+                  />
+                </div>
+                <button 
+                  type="submit" 
+                  disabled={!inputText.trim()}
+                  className="mt-2 py-2 bg-[#00ffcc]/10 hover:bg-[#00ffcc]/20 border border-[#00ffcc]/50 text-[#00ffcc] font-mono tracking-widest text-xs transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  CREATE RAW ATOM (UNHEALED)
+                </button>
+              </form>
+
+              <form onSubmit={handleGenerateMemory} className="mt-6 flex flex-col gap-2 border-t border-[#00ffcc]/20 pt-4">
+                <label className="text-xs font-mono tracking-widest text-[#ffcc00] opacity-70">GENERATE SCENARIO (AI):</label>
+                <div className="flex gap-2">
+                  <input 
+                    type="text"
+                    value={themeInput}
+                    onChange={(e) => setThemeInput(e.target.value)}
+                    className="flex-1 bg-black/60 border border-[#ffcc00]/40 text-white p-2 rounded font-mono text-xs focus:outline-none focus:border-[#ffcc00] shadow-[inset_0_0_10px_rgba(255,204,0,0.1)] transition-colors"
+                    placeholder="E.g. A difficult decision at work..."
+                  />
+                </div>
+                <button 
+                  type="submit" 
+                  disabled={!themeInput.trim() || isGenerating}
+                  className="py-2 bg-[#ffcc00]/10 hover:bg-[#ffcc00]/20 border border-[#ffcc00]/50 text-[#ffcc00] font-mono tracking-widest text-xs transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  {isGenerating ? "GENERATING..." : "GENERATE AI MEMORY"}
+                </button>
+              </form>
+
+              <div className="mt-6 flex gap-2 border-t border-[#00ffcc]/20 pt-4">
+                <button 
+                  onClick={handleSaveSession}
+                  className="flex-1 px-4 py-2 bg-[#00ffcc]/5 hover:bg-[#00ffcc]/20 border border-[#00ffcc]/40 text-[#00ffcc] font-mono text-xs uppercase tracking-widest transition-colors shadow-[0_0_8px_rgba(0,255,204,0.1)]"
+                >
+                  SAVE SESSION
+                </button>
+                <button 
+                  onClick={handleLoadSession}
+                  className="flex-1 px-4 py-2 bg-white/5 hover:bg-white/10 border border-white/20 text-white/80 font-mono text-xs uppercase tracking-widest transition-colors"
+                >
+                  LOAD SESSION
+                </button>
+              </div>
+
+              <div className="mt-2 flex">
+                <button
+                  onClick={handleSynthesizeAll}
+                  disabled={isSynthesizing || pendingSyntheses.length > 0 || nodes.every(n => n.healed)}
+                  className="w-full px-4 py-2 bg-[#ff00ff]/10 hover:bg-[#ff00ff]/20 border border-[#ff00ff]/50 text-[#ff00ff] font-mono tracking-widest text-xs transition-colors disabled:opacity-50 disabled:cursor-not-allowed shadow-[0_0_8px_rgba(255,0,255,0.15)]"
+                >
+                  {pendingSyntheses.length > 0 ? `SYNTHESIZING (${pendingSyntheses.length} REMAINING)...` : "SYNTHESIZE ALL"}
+                </button>
+              </div>
             </div>
-            <button 
-              type="submit" 
-              disabled={!themeInput.trim() || isGenerating}
-              className="py-2 bg-[#ffcc00]/10 hover:bg-[#ffcc00]/20 border border-[#ffcc00]/50 text-[#ffcc00] font-mono tracking-widest text-xs transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-            >
-              {isGenerating ? "GENERATING..." : "GENERATE AI MEMORY"}
-            </button>
-          </form>
+          )}
         </div>
         
         <button 
@@ -378,42 +731,44 @@ export default function ThirdEyeForge() {
         <p className="font-mono text-sm tracking-[0.3em] text-white/50">These things don't do me — I do these things</p>
       </div>
 
-      {/* 3D Core */}
-      <Canvas camera={{ position: [0, 2, 7] }} onPointerDown={() => spatialAudio.init()}>
-        <XR store={store}>
-          <AudioListenerUpdater />
-          <color attach="background" args={['#010102']} />
-          <ambientLight intensity={0.5} />
-          
-          {/* Flash light when healing triggers */}
-          <pointLight position={[0, 4, 0]} intensity={qiIntensity > 2 ? 8 : 1.5} color={qiIntensity > 2 ? "#ffffff" : "#00ffcc"} />
+      {/* 3D Core with WebGL Crash Failover Protection */}
+      <WebGLErrorBoundary fallback={<div className="flex-1 flex items-center justify-center text-xs font-mono text-orange-500 uppercase tracking-widest bg-black">WebGL Crash Detected. Activating 2D HUD Fallback...</div>}>
+        <Canvas camera={{ position: [0, 2, 7] }} onPointerDown={() => spatialAudio.init()}>
+          <XR store={store}>
+            <AudioListenerUpdater />
+            <color attach="background" args={['#010102']} />
+            <ambientLight intensity={0.5} />
+            
+            {/* Flash light when healing triggers */}
+            <pointLight position={[0, 4, 0]} intensity={qiIntensity > 2 ? 8 : 1.5} color={qiIntensity > 2 ? "#ffffff" : "#00ffcc"} />
 
-          <EffectComposer>
-            <Bloom luminanceThreshold={0.2} luminanceSmoothing={0.9} mipmapBlur intensity={1.5 + qiIntensity * 0.5} />
-          </EffectComposer>
+            <EffectComposer>
+              <Bloom luminanceThreshold={0.2} luminanceSmoothing={0.9} mipmapBlur intensity={1.5 + qiIntensity * 0.5} />
+            </EffectComposer>
 
-          {/* Flash Quote */}
-          {flashQuote && (
-            <Text position={[0, 5, -2]} fontSize={0.6} color="#ffffff" anchorX="center" anchorY="middle">
-              {flashQuote}
-            </Text>
-          )}
+            {/* Flash Quote */}
+            {flashQuote && (
+              <Text position={[0, 5, -2]} fontSize={0.6} color="#ffffff" anchorX="center" anchorY="middle">
+                {flashQuote}
+              </Text>
+            )}
 
-          <GazeIntegration nodes={nodes} onHeal={triggerHeal} />
-          <AmbientParticles />
-          
-          {/* Subtle Cyber Grid Floor */}
-          <gridHelper args={[40, 40, 0x00ffcc, 0x002222]} position={[0, -1, 0]} />
+            <GazeIntegration nodes={nodes} onHeal={triggerHeal} />
+            <AmbientParticles />
+            
+            {/* Subtle Cyber Grid Floor */}
+            <gridHelper args={[40, 40, 0x00ffcc, 0x002222]} position={[0, -1, 0]} />
 
-          {/* Agency Path with Knot Insertion / Healing mechanics */}
-          <AgencyPath nodes={nodes} onNodeInteract={handleNodeClick} onNodeDrop={handleNodeDrop} qiIntensity={qiIntensity} />
-          
-          {/* Triple-Blend Sentient Hands using WebXR (fallback enabled), FABRIK, Qi Sway, Markley Averaging */}
-          <SentientHands qiIntensity={qiIntensity} onPinch={handlePinch} />
+            {/* Agency Path with Knot Insertion / Healing mechanics */}
+            <AgencyPath nodes={nodes} onNodeInteract={handleNodeClick} onNodeDrop={handleNodeDrop} qiIntensity={qiIntensity} />
+            
+            {/* Triple-Blend Sentient Hands using WebXR (fallback enabled), FABRIK, Qi Sway, Markley Averaging */}
+            <SentientHands qiIntensity={qiIntensity} onPinch={handlePinch} />
 
-          <OrbitControls enablePan={true} enableRotate={true} />
-        </XR>
-      </Canvas>
+            <OrbitControls enablePan={true} enableRotate={true} />
+          </XR>
+        </Canvas>
+      </WebGLErrorBoundary>
     </div>
   );
 }

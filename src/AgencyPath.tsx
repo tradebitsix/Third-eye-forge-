@@ -1,6 +1,6 @@
 import React, { useRef, useMemo, useState, useEffect } from 'react';
 import { useFrame, useThree } from '@react-three/fiber';
-import { Text, Line, Float } from '@react-three/drei';
+import { Text, Line, Float, Trail } from '@react-three/drei';
 import * as THREE from 'three';
 import { spatialAudio } from './audio/SpatialSynth';
 
@@ -22,7 +22,7 @@ interface AgencyPathProps {
 // ---------------------------------------------------------
 // NODE VISUAL: Represents life trauma becoming healed agency
 // ---------------------------------------------------------
-function NodeVisual({ node, index, onClick, onDrop }: { node: NodeData, index: number, onClick: () => void, onDrop: (idx: number, pos: THREE.Vector3) => void }) {
+function NodeVisual({ node, index, onClick, onDrop, qiIntensity }: { node: NodeData, index: number, onClick: () => void, onDrop: (idx: number, pos: THREE.Vector3) => void, qiIntensity: number }) {
   const meshRef = useRef<THREE.Mesh>(null!);
   const particlesRef = useRef<THREE.Group>(null!);
   const { controls } = useThree();
@@ -101,13 +101,37 @@ function NodeVisual({ node, index, onClick, onDrop }: { node: NodeData, index: n
       }
     }
 
-    // HEALING PARTICLES: Shatter and expand on agency unlock
+    // HEALING PARTICLES: Flow dynamically towards the Central Forge
     if (node.healed && particlesRef.current) {
       particlesRef.current.children.forEach((p, i) => {
         const vel = particles[i].vel;
-        p.position.add(vel.clone().multiplyScalar(delta));
-        p.scale.subScalar(delta * 0.4);
-        if (p.scale.x < 0) p.scale.set(0, 0, 0); // Disappear
+        
+        // Attraction force towards forge (local coordinate system)
+        const localForgePos = new THREE.Vector3().subVectors(forgePos, node.position);
+        const dirToForge = new THREE.Vector3().subVectors(localForgePos, p.position).normalize();
+        vel.add(dirToForge.multiplyScalar(delta * (30 + qiIntensity * 20)));
+        
+        // Spiral / vibrance based on qiIntensity
+        vel.x += Math.sin(t * 15 + i) * delta * qiIntensity * 15;
+        vel.y += Math.cos(t * 15 + i) * delta * qiIntensity * 15;
+        vel.z += Math.sin(t * 10 + i * 2) * delta * qiIntensity * 10;
+        
+        // Damping
+        vel.multiplyScalar(0.88);
+
+        p.position.add(vel.clone().multiplyScalar(delta * (2 + qiIntensity)));
+        p.scale.subScalar(delta * (0.15 + qiIntensity * 0.05));
+        
+        // Respawn to create a continuous stream
+        if (p.scale.x < 0) {
+           p.position.set(0, 0, 0); // Local to the particlesRef which is at node.position
+           p.scale.setScalar(0.08);
+           vel.set(
+             (Math.random() - 0.5) * 4,
+             Math.random() * 4,
+             (Math.random() - 0.5) * 4
+           ).normalize().multiplyScalar(Math.random() * 8 + 2);
+        }
       });
     }
   });
@@ -422,8 +446,129 @@ function AgencyPillar({ nodes, qiIntensity }: { nodes: NodeData[], qiIntensity: 
 // ---------------------------------------------------------
 // QI FLOW STREAM
 // ---------------------------------------------------------
+function QiParticle({ p, i, points, qiIntensity, color, activeNodeType }: any) {
+  const meshRef = useRef<THREE.Mesh>(null!);
+  
+  let targetColor = color;
+  if (activeNodeType === 'fear') {
+      targetColor = '#ff00ff';
+  } else if (activeNodeType === 'regret') {
+      targetColor = '#5555ff';
+  } else if (activeNodeType === 'trauma') {
+      targetColor = '#ff0033';
+  }
+  
+  useFrame((state, delta) => {
+    if (meshRef.current && points.length > 0) {
+      let speedMultiplier = 1;
+      let jitterScale = 0;
+      let yOffsetScale = 0.1;
+      let scaleBase = 0.5;
+      let scaleJitter = 0.2;
+      
+      if (activeNodeType === 'fear') {
+          speedMultiplier = 1.8;
+          jitterScale = 0.3;
+          yOffsetScale = 0.4;
+          scaleBase = 0.3;
+          scaleJitter = 0.4;
+      } else if (activeNodeType === 'regret') {
+          speedMultiplier = 0.25;
+          jitterScale = 0.02;
+          yOffsetScale = -0.05;
+          scaleBase = 0.8;
+          scaleJitter = 0.05;
+      } else if (activeNodeType === 'trauma') {
+          speedMultiplier = 0.7;
+          jitterScale = 0.25;
+          yOffsetScale = 0.25;
+          scaleBase = 0.4;
+          scaleJitter = 0.6;
+      }
+
+      p.progress += delta * 0.1 * qiIntensity * p.speedOffset * speedMultiplier;
+      if (p.progress > 1) p.progress -= 1;
+      
+      const idx = p.progress * (points.length - 1);
+      const i0 = Math.floor(idx);
+      const i1 = Math.min(i0 + 1, points.length - 1);
+      const t = idx - i0;
+
+      const mesh = meshRef.current;
+      mesh.position.lerpVectors(points[i0], points[i1], t);
+      
+      if (activeNodeType === 'fear') {
+          mesh.position.x += Math.sin(state.clock.elapsedTime * 20 * p.speedOffset + i * 1.5) * jitterScale * qiIntensity;
+          mesh.position.y += Math.cos(state.clock.elapsedTime * 25 * p.speedOffset + i * 2) * yOffsetScale * qiIntensity;
+          mesh.position.z += Math.sin(state.clock.elapsedTime * 15 * p.speedOffset + i * 3) * jitterScale * qiIntensity;
+      } else if (activeNodeType === 'trauma') {
+          mesh.position.x += (Math.random() - 0.5) * jitterScale * qiIntensity;
+          mesh.position.y += (Math.random() - 0.5) * yOffsetScale * qiIntensity;
+          mesh.position.z += (Math.random() - 0.5) * jitterScale * qiIntensity;
+          if (Math.random() > 0.85) {
+              mesh.scale.setScalar(0.05); 
+          } else {
+              mesh.scale.setScalar(scaleBase + qiIntensity * 0.2);
+          }
+      } else if (activeNodeType === 'regret') {
+          mesh.position.y += Math.sin(state.clock.elapsedTime * 2 * p.speedOffset + i) * yOffsetScale * qiIntensity;
+      } else {
+          mesh.position.y += Math.sin(state.clock.elapsedTime * 10 * p.speedOffset + i) * yOffsetScale * qiIntensity;
+      }
+
+      const material = mesh.material as THREE.MeshBasicMaterial;
+      
+      if (activeNodeType !== 'trauma') {
+          mesh.scale.setScalar(scaleBase + qiIntensity * 0.2 + Math.sin(state.clock.elapsedTime * 5 + i) * scaleJitter);
+      }
+      
+      if (activeNodeType === 'fear') {
+          material.color.setHex(0xff00ff);
+          material.opacity = 0.8;
+      } else if (activeNodeType === 'regret') {
+          material.color.setHex(0x5555ff);
+          material.opacity = 0.9;
+      } else if (activeNodeType === 'trauma') {
+          material.color.setHex(0xff0033);
+          material.opacity = Math.random() > 0.5 ? 0.3 : 0.9;
+      } else {
+          material.color.set(color);
+          material.opacity = 0.6;
+      }
+    }
+  });
+
+  // Calculate dynamic trail color and length based on qiIntensity (typical range: 0.5 to 5.0)
+  const baseColorObj = new THREE.Color(targetColor);
+  
+  // Transition towards a brighter, more radiant version of the color as qiIntensity increases
+  const highlightColorObj = new THREE.Color(
+    activeNodeType === 'fear' ? '#ff99ff' :
+    activeNodeType === 'regret' ? '#a3a3ff' :
+    activeNodeType === 'trauma' ? '#ff6688' :
+    '#ffffff'
+  );
+  
+  const factor = Math.max(0, Math.min(1, (qiIntensity - 0.5) / 4.5));
+  baseColorObj.lerp(highlightColorObj, factor);
+  const trailColor = `#${baseColorObj.getHexString()}`;
+
+  return (
+    <Trail
+      width={0.4 * (0.5 + qiIntensity * 0.1)}
+      length={20}
+      color={trailColor}
+      attenuation={(t) => t * t} // Width attenuation gives it a comet-like trail
+    >
+      <mesh ref={meshRef}>
+        <sphereGeometry args={[0.08, 8, 8]} />
+        <meshBasicMaterial transparent opacity={0.6} blending={THREE.AdditiveBlending} depthWrite={false} color={trailColor} />
+      </mesh>
+    </Trail>
+  );
+}
+
 function QiFlowStream({ points, qiIntensity, color, activeNodeType }: { points: THREE.Vector3[], qiIntensity: number, color: string, activeNodeType?: string }) {
-  const particlesRef = useRef<THREE.Group>(null!);
   const count = 30; // Number of particles flowing
 
   const particles = useMemo(() => {
@@ -433,107 +578,10 @@ function QiFlowStream({ points, qiIntensity, color, activeNodeType }: { points: 
     }));
   }, [count]);
 
-  useFrame((state, delta) => {
-    if (particlesRef.current && points.length > 0) {
-      const children = particlesRef.current.children;
-      particles.forEach((p, i) => {
-        let speedMultiplier = 1;
-        let jitterScale = 0;
-        let yOffsetScale = 0.1;
-        let scaleBase = 0.5;
-        let scaleJitter = 0.2;
-        
-        if (activeNodeType === 'fear') {
-            // Erratic darting, rapid chaotic flow
-            speedMultiplier = 1.8;
-            jitterScale = 0.3;
-            yOffsetScale = 0.4;
-            scaleBase = 0.3;
-            scaleJitter = 0.4;
-        } else if (activeNodeType === 'regret') {
-            // Slow, heavy, sluggish flow
-            speedMultiplier = 0.25;
-            jitterScale = 0.02;
-            yOffsetScale = -0.05; // slightly lower
-            scaleBase = 0.8;
-            scaleJitter = 0.05;
-        } else if (activeNodeType === 'trauma') {
-            // Flickering, glitchy, chaotic flow
-            speedMultiplier = 0.7;
-            jitterScale = 0.25;
-            yOffsetScale = 0.25;
-            scaleBase = 0.4;
-            scaleJitter = 0.6;
-        }
-
-        // Move along the path, speed influenced by qiIntensity
-        p.progress += delta * 0.1 * qiIntensity * p.speedOffset * speedMultiplier;
-        if (p.progress > 1) p.progress -= 1; // Loop back
-        
-        const idx = p.progress * (points.length - 1);
-        const i0 = Math.floor(idx);
-        const i1 = Math.min(i0 + 1, points.length - 1);
-        const t = idx - i0;
-
-        const mesh = children[i] as THREE.Mesh;
-        if (mesh) {
-           mesh.position.lerpVectors(points[i0], points[i1], t);
-           
-           // Apply specific motion variations based on node type
-           if (activeNodeType === 'fear') {
-               mesh.position.x += Math.sin(state.clock.elapsedTime * 20 * p.speedOffset + i * 1.5) * jitterScale * qiIntensity;
-               mesh.position.y += Math.cos(state.clock.elapsedTime * 25 * p.speedOffset + i * 2) * yOffsetScale * qiIntensity;
-               mesh.position.z += Math.sin(state.clock.elapsedTime * 15 * p.speedOffset + i * 3) * jitterScale * qiIntensity;
-           } else if (activeNodeType === 'trauma') {
-               mesh.position.x += (Math.random() - 0.5) * jitterScale * qiIntensity;
-               mesh.position.y += (Math.random() - 0.5) * yOffsetScale * qiIntensity;
-               mesh.position.z += (Math.random() - 0.5) * jitterScale * qiIntensity;
-               
-               // Glitchy scaling
-               if (Math.random() > 0.85) {
-                   mesh.scale.setScalar(0.05); 
-               } else {
-                   mesh.scale.setScalar(scaleBase + qiIntensity * 0.2);
-               }
-           } else if (activeNodeType === 'regret') {
-               mesh.position.y += Math.sin(state.clock.elapsedTime * 2 * p.speedOffset + i) * yOffsetScale * qiIntensity;
-           } else {
-               // Default (e.g. 'lesson' or completely healed)
-               mesh.position.y += Math.sin(state.clock.elapsedTime * 10 * p.speedOffset + i) * yOffsetScale * qiIntensity;
-           }
-
-           // Apply smooth scaling for non-trauma nodes
-           if (activeNodeType !== 'trauma') {
-               mesh.scale.setScalar(scaleBase + qiIntensity * 0.2 + Math.sin(state.clock.elapsedTime * 5 + i) * scaleJitter);
-           }
-           
-           // Adjust material color/opacity based on type
-           const material = mesh.material as THREE.MeshBasicMaterial;
-           if (activeNodeType === 'fear') {
-               material.color.setHex(0xff00ff); // Magenta
-               material.opacity = 0.8;
-           } else if (activeNodeType === 'regret') {
-               material.color.setHex(0x5555ff); // Dark blue
-               material.opacity = 0.9;
-           } else if (activeNodeType === 'trauma') {
-               material.color.setHex(0xff0033); // Red
-               material.opacity = Math.random() > 0.5 ? 0.3 : 0.9; // flickering opacity
-           } else {
-               material.color.set(color); // Default color passed as prop
-               material.opacity = 0.6;
-           }
-        }
-      });
-    }
-  });
-
   return (
-    <group ref={particlesRef}>
-      {particles.map((_, i) => (
-        <mesh key={i}>
-          <sphereGeometry args={[0.08, 8, 8]} />
-          <meshBasicMaterial transparent opacity={0.6} blending={THREE.AdditiveBlending} depthWrite={false} color={color} />
-        </mesh>
+    <group>
+      {particles.map((p, i) => (
+        <QiParticle key={i} p={p} i={i} points={points} qiIntensity={qiIntensity} color={color} activeNodeType={activeNodeType} />
       ))}
     </group>
   );
@@ -617,7 +665,7 @@ export default function AgencyPath({ nodes, onNodeInteract, onNodeDrop, qiIntens
 
       {/* Map Nodes */}
       {nodes.map((node, i) => (
-        <NodeVisual key={i} node={node} index={i} onClick={() => onNodeInteract(i)} onDrop={onNodeDrop || (() => {})} />
+        <NodeVisual key={i} node={node} index={i} onClick={() => onNodeInteract(i)} onDrop={onNodeDrop || (() => {})} qiIntensity={qiIntensity} />
       ))}
 
       {/* Central Agency Pillar & Wealth Fortress */}

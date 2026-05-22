@@ -4,6 +4,8 @@ import { OrbitControls, Environment, ContactShadows, Text, Grid, PivotControls, 
 import * as THREE from 'three';
 import { STLExporter, GLTFExporter, STLLoader, OBJLoader } from 'three-stdlib';
 import { GoogleGenAI } from '@google/genai';
+import { useWebGLAvailable } from '../webglCheck';
+import { WebGLErrorBoundary } from '../components/WebGLErrorBoundary';
 
 interface PrintSpec {
   partName: string;
@@ -136,35 +138,16 @@ function GeneratedObject({ activePrint, imagePreview, scaleOverride = 1, uploade
                 metalness={0.2}
               />
             </mesh>
-            {/* Back display */}
-            <mesh position={[0, 0, -(scaleZ * 0.9) / 2]}>
-              <planeGeometry args={[texScaleX * 0.9, texScaleY * 0.9]} />
-              <meshStandardMaterial 
-                map={texture} 
-                alphaTest={0.5}
-                transparent={false}
-                side={THREE.DoubleSide}
-                roughness={0.3}
-                metalness={0.2}
+            {/* Outline mesh instead of 30 overlays to save GPU fill rate and prevent browser OOM */}
+            <mesh position={[0, 0, 0]}>
+              <boxGeometry args={[texScaleX * 0.9, texScaleY * 0.9, scaleZ * 0.9]} />
+              <meshBasicMaterial 
+                color="#00aaff"
+                wireframe={true}
+                transparent={true}
+                opacity={0.15}
               />
             </mesh>
-            {/* Sliced layers effect for 3D extrusion illusion without blocking the shape */}
-            {Array.from({ length: 30 }).map((_, i) => {
-               const offset = ((i - 15) * (scaleZ * 0.9)) / 30;
-               return (
-                  <mesh key={i} position={[0, 0, offset]}>
-                    <planeGeometry args={[texScaleX * 0.9, texScaleY * 0.9]} />
-                    <meshBasicMaterial 
-                      map={texture} 
-                      alphaTest={0.05}
-                      transparent={true}
-                      opacity={0.15}
-                      side={THREE.DoubleSide}
-                      depthWrite={false}
-                    />
-                  </mesh>
-               )
-            })}
           </group>
         ) : (
           <mesh>
@@ -184,6 +167,7 @@ function GeneratedObject({ activePrint, imagePreview, scaleOverride = 1, uploade
 }
 
 export default function PrintLab() {
+  const isWebGL = useWebGLAvailable();
   const [inputText, setInputText] = useState("");
   const [imagePreview, setImagePreview] = useState<string | null>(null);
   const [base64Data, setBase64Data] = useState<string | null>(null);
@@ -722,7 +706,7 @@ export default function PrintLab() {
                   <div className="text-white truncate" title={activePrint.partName}>{activePrint.partName}</div>
                   
                   <div className="text-gray-500">SIZE (mm)</div>
-                  <div className="text-white">{activePrint.dimensions.x} x {activePrint.dimensions.y} x {activePrint.dimensions.z}</div>
+                  <div className="text-white">{activePrint.dimensions?.x || 0} x {activePrint.dimensions?.y || 0} x {activePrint.dimensions?.z || 0}</div>
                   
                   <div className="text-gray-500">MATERIAL</div>
                   <div className="text-white text-[10px]">{activePrint.material}</div>
@@ -755,7 +739,7 @@ export default function PrintLab() {
                     onChange={(e) => setModelScale(parseInt(e.target.value))}
                     className="w-full accent-blue-500 h-1 bg-blue-900 rounded-lg appearance-none cursor-pointer"
                   />
-                  <p className="text-[9px] text-gray-500 mt-1 uppercase">Adjust before download for {Math.round(activePrint.dimensions.x * (modelScale/100))}mm x {Math.round(activePrint.dimensions.y * (modelScale/100))}mm bounding box.
+                  <p className="text-[9px] text-gray-500 mt-1 uppercase">Adjust before download for {Math.round((activePrint.dimensions?.x || 0) * (modelScale/100))}mm x {Math.round((activePrint.dimensions?.y || 0) * (modelScale/100))}mm bounding box.
                   <br/><span className="text-blue-500/70">NOTE: STL/GLB EXPORT USES MANIFOLD BOUNDING-BOX PROXY. FOR TRUE MESH GENERATION, A DEDICATED MODELING ENGINE IS REQUIRED.</span></p>
                 </div>
 
@@ -892,20 +876,107 @@ export default function PrintLab() {
       )}
 
       {/* 3D Viewport */}
-      <div className="flex-1 w-full relative bg-[#050505] overflow-hidden">
-        <Canvas camera={{ position: [20, 15, 20], fov: 45 }}>
-          <color attach="background" args={['#050505']} />
-          
-          <ambientLight intensity={0.7} />
-          <spotLight position={[10, 20, 10]} intensity={2.0} angle={0.5} penumbra={1} castShadow />
-          <pointLight position={[-10, -10, -10]} intensity={1.0} color="#3388ff" />
+      <div className="flex-1 w-full relative bg-[#050505] overflow-hidden flex items-center justify-center">
+        {!isWebGL ? (
+          <div className="absolute inset-0 flex flex-col items-center justify-center p-4">
+             {/* Slicer grid canvas */}
+             <div className="relative w-full h-[85%] max-h-[550px] border border-blue-500/20 bg-black/60 rounded overflow-hidden flex flex-col justify-between p-4 shadow-[0_0_30px_rgba(59,130,246,0.05)] text-white">
+                <div className="absolute inset-0 bg-[linear-gradient(rgba(59,130,246,0.03)_1px,_transparent_1px),_linear-gradient(90deg,_rgba(59,130,246,0.03)_1px,_transparent_1px)] bg-[size:16px_16px] pointer-events-none" />
+                
+                <div className="flex justify-between items-start z-10 pointer-events-none">
+                   <div>
+                      <h3 className="text-xs font-mono font-black text-blue-400 uppercase tracking-widest">
+                         2D VECTOR PLATFORM <span className="text-[8px] py-0.5 px-1 border border-[#3b82f6]/40 text-[#3b82f6]/80 rounded ml-1 align-middle">CAD DECK ACTIVE</span>
+                      </h3>
+                      <p className="text-[9px] font-mono text-gray-400 mt-0.5 tracking-wider uppercase">BUILD SIZE: 220x220x250mm | BED: 60°C</p>
+                   </div>
+                   <div className="text-right">
+                      <span className="text-[8px] text-green-400 font-mono tracking-widest block uppercase">✓ PRINTER ENGINE LINKED</span>
+                      <span className="text-[8px] text-gray-500 font-mono lowercase mt-0.5 block">{activePrint ? `${activePrint.partName}.stl` : "bed_empty.stl"}</span>
+                   </div>
+                </div>
 
-          <PrinterBed />
-          <GeneratedObject activePrint={activePrint} imagePreview={imagePreview} scaleOverride={modelScale / 100} uploadedGeometry={uploadedGeometry} />
+                {/* Splicer representation graphics */}
+                <div className="flex-1 flex items-center justify-center relative my-2 w-full">
+                   <svg className="w-full h-full max-h-[300px]" viewBox="0 0 500 250">
+                      {/* Grid border */}
+                      <rect x="50" y="20" width="400" height="210" fill="none" stroke="#3b82f6" strokeWidth="1" strokeOpacity="0.25" />
+                      <line x1="250" y1="20" x2="250" y2="230" stroke="#3b82f6" strokeWidth="0.5" strokeDasharray="2 2" strokeOpacity="0.3" />
+                      <line x1="50" y1="125" x2="450" y2="125" stroke="#3b82f6" strokeWidth="0.5" strokeDasharray="2 2" strokeOpacity="0.3" />
 
-          <ContactShadows position={[0, 0, 0]} opacity={0.4} scale={40} blur={2} far={10} />
-          <OrbitControls makeDefault minPolarAngle={0} maxPolarAngle={Math.PI / 2 - 0.05} minDistance={5} maxDistance={50} />
-        </Canvas>
+                      {/* Active printed model boundaries */}
+                      {activePrint ? (
+                        <g>
+                           {/* Concentric layered CAD toolpath lines */}
+                           <rect 
+                             x={`${250 - ((activePrint.dimensions?.x || 0) * 2 * (modelScale / 100))}`} 
+                             y={`${125 - ((activePrint.dimensions?.y || 0) * 2 * (modelScale / 100))}`} 
+                             width={`${(activePrint.dimensions?.x || 0) * 4 * (modelScale / 100)}`} 
+                             height={`${(activePrint.dimensions?.y || 0) * 4 * (modelScale / 100)}`} 
+                             fill="none" 
+                             stroke="#3b82f6" 
+                             strokeWidth="1.5" 
+                             className="animate-[pulse_3s_ease-in-out_infinite]"
+                           />
+                           
+                           <rect 
+                             x={`${250 - ((activePrint.dimensions?.x || 0) * 1.5 * (modelScale / 100))}`} 
+                             y={`${125 - ((activePrint.dimensions?.y || 0) * 1.5 * (modelScale / 100))}`} 
+                             width={`${(activePrint.dimensions?.x || 0) * 3 * (modelScale / 100)}`} 
+                             height={`${(activePrint.dimensions?.y || 0) * 3 * (modelScale / 100)}`} 
+                             fill="none" 
+                             stroke="#60a5fa" 
+                             strokeWidth="1" 
+                             strokeDasharray="4 2"
+                           />
+
+                           <circle cx="250" cy="125" r="5" fill="#3b82f6" className="animate-ping" />
+                           <circle cx="250" cy="125" r="2.5" fill="#60a5fa" />
+                           
+                           {/* Model boundary dimensions text overlay */}
+                           <text x="250" y={`${125 + ((activePrint.dimensions?.y || 0) * 2.2 * (modelScale / 100)) + 12}`} fill="#93c5fd" fontSize="8" textAnchor="middle" fontFamily="monospace" className="font-bold opacity-80 uppercase">
+                              DIM: {((activePrint.dimensions?.x || 0) * (modelScale / 100) * 10).toFixed(1)} x {((activePrint.dimensions?.y || 0) * (modelScale / 100) * 10).toFixed(1)} x {((activePrint.dimensions?.z || 0) * (modelScale / 100) * 10).toFixed(1)} mm
+                           </text>
+                        </g>
+                      ) : (
+                        <g>
+                           <text x="250" y="120" fill="#64748b" fontSize="10" textAnchor="middle" fontFamily="monospace" className="uppercase tracking-widest font-black opacity-80">PRINTER BED EMPTY</text>
+                           <text x="250" y="135" fill="#475569" fontSize="8" textAnchor="middle" fontFamily="monospace" className="uppercase tracking-[0.2em]">Upload parts or click template from deck list</text>
+                        </g>
+                      )}
+                   </svg>
+
+                   {/* Scale label HUD overlay */}
+                   {activePrint && (
+                     <div className="absolute bottom-2 right-2 p-2 bg-blue-950/40 border border-blue-500/25 text-blue-400 font-mono text-[9px] uppercase">
+                        SCALE MUTATION: {modelScale}%
+                     </div>
+                   )}
+                </div>
+
+                <div className="flex justify-between items-center border-t border-blue-500/15 pt-2 border-dashed font-mono">
+                   <span className="text-[8px] text-gray-500">MCP NODE COMPILED SUCCESSFULLY</span>
+                   <span className="text-[8px] text-gray-400">High-Fidelity 2D draft active (No WebGL support required)</span>
+                </div>
+             </div>
+          </div>
+        ) : (
+          <WebGLErrorBoundary fallback={<div className="flex-1 flex items-center justify-center text-xs font-mono text-blue-400 uppercase tracking-widest bg-[#050505]">WebGL Crash Detected. Activating 2D Active Layout...</div>}>
+            <Canvas camera={{ position: [20, 15, 20], fov: 45 }}>
+              <color attach="background" args={['#050505']} />
+              
+              <ambientLight intensity={0.7} />
+              <spotLight position={[10, 20, 10]} intensity={2.0} angle={0.5} penumbra={1} castShadow />
+              <pointLight position={[-10, -10, -10]} intensity={1.0} color="#3388ff" />
+
+              <PrinterBed />
+              <GeneratedObject activePrint={activePrint} imagePreview={imagePreview} scaleOverride={modelScale / 100} uploadedGeometry={uploadedGeometry} />
+
+              <ContactShadows position={[0, 0, 0]} opacity={0.4} scale={40} blur={2} far={10} />
+              <OrbitControls makeDefault minPolarAngle={0} maxPolarAngle={Math.PI / 2 - 0.05} minDistance={5} maxDistance={50} />
+            </Canvas>
+          </WebGLErrorBoundary>
+        )}
       </div>
 
       {/* Guide Modal */}
