@@ -46,11 +46,6 @@ export default function App() {
   return (
     <div className="w-full h-screen bg-[#050505] text-white overflow-hidden relative font-sans">
       
-        {/* DEBUG OVERLAY */}
-        <div className="fixed top-0 left-0 z-[9999] p-2 bg-red-500 text-white font-mono text-xs pointer-events-none opacity-50">
-          React Mounted | Room: {currentRoom} | WebGL: {isWebGL ? 'ON' : 'OFF'}
-        </div>
-
         {/* HUB VIEW */}
         <AnimatePresence mode="wait">
         {currentRoom === 'hub' && (

@@ -202,6 +202,7 @@ export default function PrintLab() {
 
   const [showSlicer, setShowSlicer] = useState(false);
   const [mcpUrl, setMcpUrl] = useState("https://fanz-github-mcp.vercel.app/context.md");
+  const [generatedGCode, setGeneratedGCode] = useState<string | null>(null);
   const [slicerSettings, setSlicerSettings] = useState({
     printer: "Labists X1",
     layerHeight: 0.2,
@@ -274,8 +275,8 @@ export default function PrintLab() {
             }
 
             // STL files should match expected size. 
-            // Allow for a small amount of padding at the end.
-            if (buffer.byteLength < expectedLength || buffer.byteLength > expectedLength + 512) {
+            // We only check if it's too small. Some slicers append trailing metadata, so we ignore excess length.
+            if (buffer.byteLength < expectedLength) {
                throw new Error("CORRUPT STL: The file size does not match the internal binary facet count. Make sure you uploaded a real 3D model, not a text or base64 file.");
             }
           } else {
@@ -655,6 +656,9 @@ export default function PrintLab() {
                   className="bg-black/60 border border-blue-500/30 text-white p-3 rounded font-mono text-sm focus:outline-none focus:border-blue-500 shadow-[inset_0_0_10px_rgba(59,130,246,0.05)] transition-colors resize-none"
                   rows={2}
                   placeholder="e.g. Drone wing 45 degree angle, thick base"
+                  autoCapitalize="off"
+                  autoCorrect="off"
+                  spellCheck="false"
                 />
             </div>
 
@@ -1132,6 +1136,24 @@ export default function PrintLab() {
                   </select>
                 </div>
                 
+                <div className="pt-2 pb-2 mt-2 border-t border-blue-500/10">
+                  <label className="block text-[10px] text-gray-400 font-mono mb-1 uppercase tracking-widest">Slicer Preset</label>
+                  <div className="flex gap-2">
+                    <button onClick={() => {
+                        setSlicerSettings(prev => ({ ...prev, layerHeight: 0.28, infill: 10, printSpeed: 80 }));
+                    }} className="flex-1 bg-[#111115] border border-gray-600 hover:border-blue-500 rounded p-1 text-gray-300 font-mono text-[9px] uppercase transition-colors">Fast</button>
+                    <button onClick={() => {
+                        setSlicerSettings(prev => ({ ...prev, layerHeight: 0.2, infill: 20, printSpeed: 60 }));
+                    }} className="flex-1 bg-[#111115] border border-gray-600 hover:border-blue-500 rounded p-1 text-gray-300 font-mono text-[9px] uppercase transition-colors">Standard</button>
+                    <button onClick={() => {
+                        setSlicerSettings(prev => ({ ...prev, layerHeight: 0.12, infill: 20, printSpeed: 40 }));
+                    }} className="flex-1 bg-[#111115] border border-gray-600 hover:border-blue-500 rounded p-1 text-gray-300 font-mono text-[9px] uppercase transition-colors">Quality</button>
+                    <button onClick={() => {
+                        setSlicerSettings(prev => ({ ...prev, layerHeight: 0.2, infill: 50, printSpeed: 50 }));
+                    }} className="flex-1 bg-[#111115] border border-gray-600 hover:border-blue-500 rounded p-1 text-gray-300 font-mono text-[9px] uppercase transition-colors">Strong</button>
+                  </div>
+                </div>
+
                 <div className="pt-2 pb-2 border-t border-blue-500/10">
                   <label className="block text-[10px] text-gray-400 font-mono mb-1 uppercase tracking-widest">Filament Material</label>
                   <select 
@@ -1240,6 +1262,53 @@ export default function PrintLab() {
                                 if (prev >= 100) {
                                     clearInterval(interval);
                                     setSlicerStatus("DONE");
+                                    
+                                    // Generate toolpath immediately upon slicing completion
+                                    let mockGcode = `; ==================================================================\n`;
+                                    mockGcode += `; [MCP SERVER G-CODE PAYLOAD]\n`;
+                                    mockGcode += `; Sliced securely on mobile cloud node.\n`;
+                                    mockGcode += `; ==================================================================\n\n`;
+                                    mockGcode += `; LABISTS 3D PRINTER GCODE\n; Target: ${slicerSettings.printer}\n; Part: ${activePrint?.partName}\n; Layer Height: ${slicerSettings.layerHeight}mm\n; Material: ${slicerSettings.material}\n\nM104 S${slicerSettings.extruderTemp} ; set extruder temp\nM140 S${slicerSettings.bedTemp} ; set bed temp\nG28 ; home all axes\nG1 Z15.0 F${slicerSettings.printSpeed * 60} ; move the platform down 15mm\nM109 S${slicerSettings.extruderTemp} ; wait for extruder temp\nM190 S${slicerSettings.bedTemp} ; wait for bed temp\nG92 E0 ; reset extruder\nG1 F200 E3 ; prime extruder\n`;
+                                    
+                                    const activeDims = activePrint?.dimensions || {x: 50, y:50, z:50};
+                                    const finalX = (activeDims.x / 10) * (modelScale / 100) * 10;
+                                    const finalY = (activeDims.y / 10) * (modelScale / 100) * 10;
+                                    const layers = Math.floor(activeDims.z / slicerSettings.layerHeight);
+                                    
+                                    mockGcode += `\n; --- LAYER DATA [${layers} layers] ---\n`;
+                                    
+                                    for(let i=0; i<Math.min(layers, 100); i++) {
+                                        mockGcode += `; Layer ${i}\nG1 Z${(i * slicerSettings.layerHeight).toFixed(2)} F300\n`;
+                                        // outline
+                                        mockGcode += `; TYPE: PERIMETER\n`;
+                                        mockGcode += `G1 X0 Y0 E0\n`;
+                                        mockGcode += `G1 X${finalX.toFixed(1)} Y0 E${(0.1).toFixed(3)}\n`;
+                                        mockGcode += `G1 X${finalX.toFixed(1)} Y${finalY.toFixed(1)} E${(0.2).toFixed(3)}\n`;
+                                        mockGcode += `G1 X0 Y${finalY.toFixed(1)} E${(0.3).toFixed(3)}\n`;
+                                        mockGcode += `G1 X0 Y0 E${(0.4).toFixed(3)}\n`;
+                                        
+                                        // add infill zigzag
+                                        mockGcode += `; TYPE: INFILL\n`;
+                                        for(let z=0; z<10; z++) {
+                                            mockGcode += `G1 X${(Math.random() * finalX).toFixed(1)} Y${(Math.random() * finalY).toFixed(1)} E${(0.5 + Math.random()*0.1).toFixed(3)}\n`;
+                                        }
+
+                                        if (slicerSettings.support) {
+                                            mockGcode += `; TYPE: SUPPORT\n`;
+                                            // generate support zigzag outside the main rectangle
+                                            // like a border around the print
+                                            for(let s=0; s<15; s++) {
+                                               const angle = (s / 15) * Math.PI * 2;
+                                               const radiusX = (finalX / 2) + 5 + Math.random() * 2;
+                                               const radiusY = (finalY / 2) + 5 + Math.random() * 2;
+                                               const sX = (finalX / 2) + Math.cos(angle) * radiusX;
+                                               const sY = (finalY / 2) + Math.sin(angle) * radiusY;
+                                               mockGcode += `G1 X${sX.toFixed(1)} Y${sY.toFixed(1)} E${(0.6 + Math.random()*0.1).toFixed(3)}\n`;
+                                            }
+                                        }
+                                    }
+                                    mockGcode += `\nM104 S0 ; turn off temperature\nM140 S0 ; turn off bed\nG28 X0  ; home X axis\nM84     ; disable motors\n`;
+                                    setGeneratedGCode(mockGcode);
                                     return 100;
                                 }
                                 return prev + 5;
@@ -1280,30 +1349,120 @@ export default function PrintLab() {
                 <h3 className="text-white font-black text-xl font-sans tracking-tight mb-1">MCP PAYLOAD RECEIVED</h3>
                 <p className="text-xs text-green-400 font-mono mb-6">Slicing complete. Target: {slicerSettings.printer} | Layer: {slicerSettings.layerHeight}mm</p>
                 
+                {/* 2D G-CODE TOOLPATH PREVIEW */}
+                <div className="w-full h-32 bg-[#020202] border border-blue-500/30 rounded mb-4 relative overflow-hidden flex items-center justify-center">
+                  <div className="absolute top-2 left-2 text-[8px] text-blue-500/70 font-mono uppercase">Toolpath Preview</div>
+                  <svg width="100%" height="100%" viewBox="0 0 100 100" preserveAspectRatio="xMidYMid meet" className="opacity-80">
+                    <line x1="10" y1="90" x2="10" y2="10" stroke="#003366" strokeWidth="0.5" />
+                    <line x1="10" y1="90" x2="90" y2="90" stroke="#003366" strokeWidth="0.5" />
+                    
+                    {/* Parsed toolpath drawing from G-Code */}
+                    <g className="animate-in fade-in zoom-in duration-1000">
+                      {(() => {
+                          if (!generatedGCode) return null;
+                          const activeDims = activePrint?.dimensions || {x: 50, y: 50, z: 50};
+                          const scale = (modelScale / 100);
+                          const maxDim = Math.max(activeDims.x * scale, activeDims.y * scale, 1);
+                          
+                          // normalize to 10..90 box
+                          const boxW = (activeDims.x * scale / maxDim) * 60; 
+                          const boxH = (activeDims.y * scale / maxDim) * 60;
+                          const centerX = 50;
+                          const centerY = 50;
+                          
+                          const pts: {type: string, path: string[]}[] = [
+                              { type: 'PERIMETER', path: [] },
+                              { type: 'INFILL', path: [] },
+                              { type: 'SUPPORT', path: [] }
+                          ];
+                          const lines = generatedGCode.split('\n');
+                          let currentType = 'PERIMETER';
+                          let drawnLines = 0;
+                          const xScale = 60 / maxDim;
+                          for (const line of lines) {
+                             if (line.startsWith('; TYPE:')) {
+                                 currentType = line.split(':')[1].trim();
+                             } else if (line.startsWith('G1')) {
+                                 const xm = line.match(/X([\d.]+)/);
+                                 const ym = line.match(/Y([\d.]+)/);
+                                 if (xm && ym) {
+                                     const pX = parseFloat(xm[1]);
+                                     const pY = parseFloat(ym[1]);
+                                     const xStr = `${centerX - boxW/2 + (pX * xScale)}`;
+                                     const yStr = `${centerY - boxH/2 + (pY * xScale)}`;
+                                     
+                                     const group = pts.find(p => p.type === currentType);
+                                     if (group) {
+                                         group.path.push(`${xStr},${yStr}`);
+                                         drawnLines++;
+                                     }
+                                 }
+                             }
+                             if (drawnLines > 1000) break; // performance limit for preview
+                          }
+                          
+                          return (
+                              <>
+                                {/* Supports (drawn first so they are behind) */}
+                                {pts.find(p => p.type === 'SUPPORT')?.path.length > 0 && (
+                                   <polyline 
+                                     points={pts.find(p => p.type === 'SUPPORT')!.path.join(' ')} 
+                                     fill="none" 
+                                     stroke="#a855f7" 
+                                     strokeWidth="0.5" 
+                                     strokeOpacity="0.4"
+                                     strokeDasharray="1,1"
+                                     strokeLinecap="round"
+                                     strokeLinejoin="round"
+                                   />
+                                )}
+                                {/* Infill */}
+                                {pts.find(p => p.type === 'INFILL')?.path.length > 0 && (
+                                   <polyline 
+                                     points={pts.find(p => p.type === 'INFILL')!.path.join(' ')} 
+                                     fill="none" 
+                                     stroke="#3b82f6" 
+                                     strokeWidth="0.5" 
+                                     strokeOpacity="0.8"
+                                     strokeLinecap="round"
+                                     strokeLinejoin="round"
+                                   />
+                                )}
+                                {/* Perimeter */}
+                                {pts.find(p => p.type === 'PERIMETER')?.path.length > 0 && (
+                                   <polyline 
+                                     points={pts.find(p => p.type === 'PERIMETER')!.path.join(' ')} 
+                                     fill="none" 
+                                     stroke="#00ffff" 
+                                     strokeWidth="1" 
+                                     strokeOpacity="1"
+                                     strokeLinecap="round"
+                                     strokeLinejoin="round"
+                                   />
+                                )}
+                                {/* Bed Bounds representation (optional, drawing perimeter instead of fixed rect) */}
+                                <rect 
+                                  x={centerX - boxW/2} 
+                                  y={centerY - boxH/2} 
+                                  width={boxW} 
+                                  height={boxH} 
+                                  fill="none" 
+                                  stroke="#00ffff" 
+                                  strokeWidth="0.2"
+                                  strokeDasharray="2,2"
+                                  strokeOpacity="0.5"
+                                />
+                              </>
+                          );
+                      })()}
+                    </g>
+                  </svg>
+                </div>
+
                 <button 
                   onClick={() => {
-                        const activeDims = activePrint.dimensions;
-                        const finalX = (activeDims.x / 10) * (modelScale / 100) * 10; // back to mm
-                        const finalY = (activeDims.y / 10) * (modelScale / 100) * 10;
-                        const layers = Math.floor(activeDims.z / slicerSettings.layerHeight);
-
-                        let mockGcode = `; ==================================================================\n`;
-                        mockGcode += `; [MCP SERVER G-CODE PAYLOAD]\n`;
-                        mockGcode += `; Sliced securely on mobile cloud node.\n`;
-                        mockGcode += `; ==================================================================\n\n`;
-                        mockGcode += `; LABISTS 3D PRINTER GCODE\n; Target: ${slicerSettings.printer}\n; Part: ${activePrint.partName}\n; Layer Height: ${slicerSettings.layerHeight}mm\n; Material: ${slicerSettings.material}\n\nM104 S${slicerSettings.extruderTemp} ; set extruder temp\nM140 S${slicerSettings.bedTemp} ; set bed temp\nG28 ; home all axes\nG1 Z15.0 F${slicerSettings.printSpeed * 60} ; move the platform down 15mm\nM109 S${slicerSettings.extruderTemp} ; wait for extruder temp\nM190 S${slicerSettings.bedTemp} ; wait for bed temp\nG92 E0 ; reset extruder\nG1 F200 E3 ; prime extruder\n`;
-                        
-                        mockGcode += `\n; --- LAYER DATA [${layers} layers] ---\n`;
-                        for(let i=0; i<Math.min(layers, 100); i++) {
-                            mockGcode += `; Layer ${i}\nG1 Z${(i * slicerSettings.layerHeight).toFixed(2)} F300\nG1 X${(Math.random() * finalX).toFixed(1)} Y${(Math.random() * finalY).toFixed(1)} E${(i * 0.1).toFixed(3)}\n`;
-                        }
-                        if (layers > 100) {
-                            mockGcode += `; ... [TRUNCATED ${layers - 100} LAYERS FOR PREVIEW] ...\n`;
-                        }
-
-                        mockGcode += `\nM104 S0 ; turn off temperature\nM140 S0 ; turn off bed\nG28 X0  ; home X axis\nM84     ; disable motors\n`;
-
-                        const gcodeBlob = new Blob([mockGcode], { type: 'text/plain' });
+                        if (!generatedGCode) return;
+                        const gcodeBlob = new Blob([generatedGCode], { type: 'text/plain' });
                         const gcodeUrl = URL.createObjectURL(gcodeBlob);
                         const dlGcode = document.createElement('a');
                         dlGcode.setAttribute("href", gcodeUrl);

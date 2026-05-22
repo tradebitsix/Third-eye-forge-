@@ -8,6 +8,7 @@ import * as THREE from 'three';
 import { GoogleGenAI } from '@google/genai';
 import { useWebGLAvailable } from './webglCheck';
 import { WebGLErrorBoundary } from './components/WebGLErrorBoundary';
+import { motion } from 'motion/react';
 
 import AgencyPath, { NodeData } from './AgencyPath';
 import SentientHands from './SentientHands';
@@ -398,6 +399,7 @@ export default function ThirdEyeForge() {
     }
   };
 
+  const forgeCoreRef = useRef<HTMLDivElement>(null);
   const isWebGL = useWebGLAvailable();
 
   if (!isWebGL) {
@@ -517,8 +519,8 @@ export default function ThirdEyeForge() {
              <div className="absolute inset-0 bg-[linear-gradient(rgba(18,16,16,0)_50%,_rgba(0,0,0,0.25)_50%),_linear-gradient(90deg,_rgba(0,255,204,0.03),rgba(0,255,100,0.01),rgba(0,0,255,0.03))] bg-[size:100%_4px,_3px_100%] pointer-events-none z-10" />
 
              {/* Central Synthesis Ring */}
-             <div className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 flex flex-col items-center justify-center z-1 pointer-events-none">
-                <div className={`w-32 h-32 rounded-full border border-dashed border-[#00ffcc]/30 flex items-center justify-center animate-[spin_40s_linear_infinite] ${qiIntensity > 1 ? 'border-[#00ffcc]' : ''}`} />
+             <div ref={forgeCoreRef} className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 flex flex-col items-center justify-center z-1 pointer-events-auto w-32 h-32">
+                <div className={`absolute inset-0 rounded-full border border-dashed border-[#00ffcc]/30 flex items-center justify-center animate-[spin_40s_linear_infinite] ${qiIntensity > 1 ? 'border-[#00ffcc]' : ''}`} />
                 <div className="absolute w-28 h-28 rounded-full border border-[#00ffcc]/15 animate-[ping_4s_ease-in-out_infinite]" />
                 <div className="absolute w-12 h-12 rounded-full bg-[#00ffcc]/5 border border-[#00ffcc]/30 flex items-center justify-center">
                    <div className="w-1.5 h-1.5 rounded-full bg-[#00ffcc] animate-pulse" />
@@ -567,15 +569,32 @@ export default function ThirdEyeForge() {
                                  node.type === 'regret' ? '#ff00ff' : '#00aaff';
 
                return (
-                 <div 
+                 <motion.div 
                    key={`node-2d-div-${i}`}
                    style={{ left: `${Math.min(94, Math.max(6, xPre))}%`, top: `${Math.min(88, Math.max(12, yPre))}%` }}
                    className="absolute -translate-x-1/2 -translate-y-1/2 z-20 group"
+                   drag
+                   dragSnapToOrigin={true}
+                   dragElastic={0.2}
+                   whileDrag={{ scale: 1.2, zIndex: 50 }}
+                   onDragEnd={(e, info) => {
+                       if (forgeCoreRef.current) {
+                           const rect = forgeCoreRef.current.getBoundingClientRect();
+                           if (
+                               info.point.x >= rect.left && 
+                               info.point.x <= rect.right && 
+                               info.point.y >= rect.top && 
+                               info.point.y <= rect.bottom
+                           ) {
+                               handleNodeClick(i);
+                           }
+                       }
+                   }}
+                   onClick={() => handleNodeClick(i)}
                  >
                     <button 
-                      onClick={() => handleNodeClick(i)}
                       style={{ borderColor: nodeColor, boxShadow: `0 0 10px ${nodeColor}22` }}
-                      className="relative w-7 h-7 rounded-full border bg-black/95 flex items-center justify-center transition-all hover:scale-125 focus:outline-none"
+                      className="relative w-7 h-7 rounded-full border bg-black/95 flex items-center justify-center transition-all hover:scale-125 focus:outline-none pointer-events-none"
                     >
                        <div 
                          style={{ backgroundColor: nodeColor }}
@@ -583,16 +602,16 @@ export default function ThirdEyeForge() {
                        />
                     </button>
 
-                    {/* Popover detailed label on hover */}
-                    <div className="absolute left-1/2 -translate-x-1/2 top-9 w-44 bg-black/95 border border-white/20 p-2 rounded shadow-2xl scale-0 group-hover:scale-100 transition-transform origin-top z-50 pointer-events-none">
+                    {/* Popover detailed label on hover - hide while dragging */}
+                    <div className="absolute left-1/2 -translate-x-1/2 top-9 w-44 bg-black/95 border border-white/20 p-2 rounded shadow-2xl scale-0 group-hover:scale-100 transition-transform origin-top z-50 pointer-events-none opacity-100 group-active:opacity-0 group-active:scale-0">
                        <h3 className="text-[10px] font-black uppercase text-white truncate tracking-wider mb-1" style={{ color: nodeColor }}>{node.label}</h3>
                        <p className="text-[9px] font-mono text-gray-300 leading-tight">"{node.quote}"</p>
                        <div className="mt-1 border-t border-white/10 pt-1 flex justify-between items-center text-[8px] font-mono">
                           <span className="text-gray-500 uppercase">{node.type}</span>
-                          <span style={{ color: nodeColor }} className="uppercase">{node.healed ? 'SYNTHESIZED' : 'CLICK TO HEAL'}</span>
+                          <span style={{ color: nodeColor }} className="uppercase">{node.healed ? 'SYNTHESIZED' : 'DRAG TO CORE'}</span>
                        </div>
                     </div>
-                 </div>
+                 </motion.div>
                );
              })}
           </div>
