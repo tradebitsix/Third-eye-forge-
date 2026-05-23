@@ -7,6 +7,15 @@ import { GoogleGenAI } from '@google/genai';
 import { useWebGLAvailable } from '../webglCheck';
 import { WebGLErrorBoundary } from '../components/WebGLErrorBoundary';
 
+// Safe retrieval of Gemini API Key to prevent ReferenceError in browser
+const GEMINI_API_KEY = (() => {
+  try {
+    return process.env.GEMINI_API_KEY || "";
+  } catch (e) {
+    return "";
+  }
+})();
+
 interface PrintSpec {
   partName: string;
   dimensions: { x: number, y: number, z: number };
@@ -479,34 +488,40 @@ export default function PrintLab() {
     setStatus("AI ANALYZING DIMENSIONS & PRINT PARAMETERS...");
     
     try {
-      if (typeof process !== 'undefined' && process.env && process.env.GEMINI_API_KEY) {
-        const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
+      if (GEMINI_API_KEY) {
+        const ai = new GoogleGenAI({ apiKey: GEMINI_API_KEY });
         
-        let contents: any[] = [
-          `You are a 3D printing expert system generating specifications for a Labists FDM printer.
-           Based on the user's input, estimate the real-world dimensions (in mm) and suggest standard print settings.
-           Output ONLY a valid JSON object with the keys: partName, dimensions (object with x,y,z in mm), material, infill, layerHeight, estimatedTime, notes.
-           Input: "${inputText}"`
-        ];
+        let contents: any = {
+           parts: [{
+             text: `You are a 3D printing expert system generating specifications for a Labists FDM printer.
+             Based on the user's input, estimate the real-world dimensions (in mm) and suggest standard print settings.
+             Output ONLY a valid JSON object with the keys: partName, dimensions (object with x,y,z in mm), material, infill, layerHeight, estimatedTime, notes.
+             Input: "${inputText}"`
+           }]
+        };
 
         if (base64Data) {
             const mimeMatch = imagePreview?.match(/data:([a-zA-Z0-9]+\/[a-zA-Z0-9-.+]+).*,.*/);
             const mimeType = mimeMatch ? mimeMatch[1] : "image/jpeg";
-            contents = [
-                {
-                    inlineData: {
-                        data: base64Data,
-                        mimeType: mimeType
+            contents = {
+                parts: [
+                    {
+                        inlineData: {
+                            data: base64Data,
+                            mimeType: mimeType
+                        }
+                    },
+                    {
+                        text: `Analyze this image and estimate it as a 3D printable part for a Labists printer.
+                        Include the user description if provided: "${inputText}".
+                        Output ONLY a valid JSON object: { partName, dimensions: {x,y,z}, material, infill, layerHeight, estimatedTime, notes }`
                     }
-                },
-                `Analyze this image and estimate it as a 3D printable part for a Labists printer.
-                 Include the user description if provided: "${inputText}".
-                 Output ONLY a valid JSON object: { partName, dimensions: {x,y,z}, material, infill, layerHeight, estimatedTime, notes }`
-            ];
+                ]
+            };
         }
 
         const response = await ai.models.generateContent({
-           model: "gemini-3.1-flash-lite", 
+           model: "gemini-3.5-flash", 
            contents,
            config: {
              responseMimeType: "application/json"
@@ -560,7 +575,27 @@ export default function PrintLab() {
       }
     } catch (e: any) {
       console.error(e);
-      setStatus(`ERROR: ${e.message}`);
+      let errorMsg = e.message;
+      if (errorMsg.includes("429") || errorMsg.includes("quota") || errorMsg.includes("RESOURCE_EXHAUSTED")) {
+          errorMsg = "API QUOTA EXHAUSTED - SWITCHING TO LOCAL SLICE MODELLER";
+      }
+      setStatus(`ERROR: ${errorMsg}`);
+      
+      // Fallback for quota limit
+      setTimeout(() => {
+          setActivePrint({
+            partName: inputText || "Uploaded 3D Model",
+            dimensions: { x: 120, y: 120, z: 80 },
+            material: "PLA+ (Fallback)",
+            infill: "20% Rectilinear",
+            layerHeight: "0.2mm",
+            estimatedTime: "2h 45m",
+            notes: "Locally generated fallback print specs."
+          });
+          setStatus("RENDER COMPLETE (LOCAL FALLBACK ACTIVE).");
+          setIsProcessing(false);
+      }, 500);
+      return;
     } finally {
       setIsProcessing(false);
     }

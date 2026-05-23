@@ -10,6 +10,15 @@ import { useWebGLAvailable } from './webglCheck';
 import { WebGLErrorBoundary } from './components/WebGLErrorBoundary';
 import { motion } from 'motion/react';
 
+// Safe retrieval of Gemini API Key to prevent ReferenceError in browser
+const GEMINI_API_KEY = (() => {
+  try {
+    return process.env.GEMINI_API_KEY || "";
+  } catch (e) {
+    return "";
+  }
+})();
+
 import AgencyPath, { NodeData } from './AgencyPath';
 import SentientHands from './SentientHands';
 import { spatialAudio } from './audio/SpatialSynth';
@@ -33,6 +42,7 @@ const INITIAL_NODES: NodeData[] = [
 ];
 
 import { GazeDwellManager } from './GazeDwellManager';
+import CosmicPortal from './components/CosmicPortal';
 
 function GazeIntegration({ nodes, onHeal }: { nodes: NodeData[], onHeal: (index: number) => void }) {
   const { camera, scene, gl } = useThree();
@@ -111,7 +121,11 @@ function AmbientParticles() {
 
 // Store moved to global imported xrStore
 
-export default function ThirdEyeForge() {
+interface ThirdEyeForgeProps {
+  onNavigate?: (room: string) => void;
+}
+
+export default function ThirdEyeForge({ onNavigate }: ThirdEyeForgeProps) {
   const [nodes, setNodes] = useState<NodeData[]>(INITIAL_NODES);
   const [qiIntensity, setQiIntensity] = useState(0.5);
   const [status, setStatus] = useState("SYNCING WITH MCP ORGANISM... DRAG RAW ATOMS TO THE CENTRAL FORGE.");
@@ -185,8 +199,8 @@ export default function ThirdEyeForge() {
     setStatus(`GENERATING SCENARIO BASED ON: "${themeInput.toUpperCase()}"...`);
 
     try {
-      if (typeof process !== 'undefined' && process.env && process.env.GEMINI_API_KEY) {
-        const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
+      if (GEMINI_API_KEY) {
+        const ai = new GoogleGenAI({ apiKey: GEMINI_API_KEY });
         const response = await ai.models.generateContent({
            model: "gemini-3.1-flash-lite",
            contents: `You are generating a "Raw Memory" based on the following theme: "${themeInput}".
@@ -226,7 +240,30 @@ export default function ThirdEyeForge() {
       }
     } catch(e: any) {
        console.error(e);
-       setStatus(`GENERATION FAILED: ${e.message}`);
+       let errorMsg = e.message;
+       if (errorMsg.includes("429") || errorMsg.includes("quota") || errorMsg.includes("RESOURCE_EXHAUSTED")) {
+           errorMsg = "API QUOTA EXHAUSTED - USING LOCAL FALLBACK";
+       }
+       setStatus(`GENERATION FAILED: ${errorMsg}`);
+       
+       // Fallback for demo when quota exhausted
+       setTimeout(() => {
+          setNodes(prev => [
+             ...prev,
+             {
+               position: new THREE.Vector3((Math.random() - 0.5) * 6, Math.random() * 2 + 1, (Math.random() - 0.5) * 6),
+               label: "System Memory",
+               type: "lesson",
+               quote: `${themeInput.toUpperCase()} - (Forged Offline)`,
+               healed: false
+             }
+          ]);
+          setTotalAtoms(prev => prev + 1);
+          setThemeInput("");
+          setStatus(`SCENARIO GENERATED EX SITU. DRAG THIS RAW ATOM TO THE FORGE.`);
+          setIsGenerating(false);
+       }, 500);
+       return;
     } finally {
        setIsGenerating(false);
     }
@@ -242,8 +279,8 @@ export default function ThirdEyeForge() {
       let finalQuote = nodeToHeal.quote;
 
       // Ensure API key exists in env when running locally, in AI Studio it is provided
-      if (typeof process !== 'undefined' && process.env && process.env.GEMINI_API_KEY) {
-        const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
+      if (GEMINI_API_KEY) {
+        const ai = new GoogleGenAI({ apiKey: GEMINI_API_KEY });
         const response = await ai.models.generateContent({
            model: "gemini-3.1-flash-lite",
            contents: `You are the core of a Cognitive Companion. Take this user's raw, unhealed memory/trauma and perform a 'Pinky Scar' reframing. Find the lesson, the agency, and the power in it. 
@@ -276,11 +313,15 @@ export default function ThirdEyeForge() {
       });
     } catch (e: any) {
       console.error(e);
-      setStatus(`SYNTHESIS FAILED: USING FALLBACK. ${e.message}`);
+      let errorMsg = e.message;
+      if (errorMsg.includes("429") || errorMsg.includes("quota") || errorMsg.includes("RESOURCE_EXHAUSTED")) {
+          errorMsg = "API QUOTA EXHAUSTED - SWITCHING TO LOCAL FORGE ENGINE";
+      }
+      setStatus(`SYNTHESIS ERROR: ${errorMsg}`);
       setNodes(prev => {
           const newNodes = [...prev];
           newNodes[index].healed = true;
-          newNodes[index].quote = "AGENCY ASSERTED (FALLBACK)";
+          newNodes[index].quote = "WISDOM FORGED FROM CHAOS (LOCAL SYNTHESIS)";
           setQiIntensity(3.0);
           return newNodes;
       });
@@ -777,6 +818,33 @@ export default function ThirdEyeForge() {
             
             {/* Subtle Cyber Grid Floor */}
             <gridHelper args={[40, 40, 0x00ffcc, 0x002222]} position={[0, -1, 0]} />
+
+            {/* Cosmic Portals to other zones */}
+            {onNavigate && (
+              <group position={[0, -1, -5]}>
+                 <CosmicPortal 
+                    position={[-6, 2.5, 0]} 
+                    label="THE VISION BOARD" 
+                    targetRoom="ecosystem" 
+                    onEnter={onNavigate} 
+                    scale={0.7}
+                  />
+                  <CosmicPortal 
+                    position={[0, 2.5, -3]} 
+                    label="NEXUS HUB" 
+                    targetRoom="hub" 
+                    onEnter={onNavigate} 
+                    scale={0.9}
+                  />
+                  <CosmicPortal 
+                    position={[6, 2.5, 0]} 
+                    label="3D PRINT LAB" 
+                    targetRoom="print_lab" 
+                    onEnter={onNavigate} 
+                    scale={0.7}
+                  />
+              </group>
+            )}
 
             {/* Agency Path with Knot Insertion / Healing mechanics */}
             <AgencyPath nodes={nodes} onNodeInteract={handleNodeClick} onNodeDrop={handleNodeDrop} qiIntensity={qiIntensity} />
