@@ -68,7 +68,7 @@ export default function NexusHub3D({ onNavigate }: NexusHub3DProps) {
           <gridHelper args={[40, 40, '#333333', '#111111']} position={[0, -0.49, 0]} />
         </group>
 
-        <OrbitControls enableDamping dampingFactor={0.05} maxDistance={15} minDistance={2} maxPolarAngle={Math.PI/2 - 0.05} />
+        <OrbitControls enableDamping dampingFactor={0.02} rotateSpeed={1.0} zoomSpeed={1.2} maxDistance={15} minDistance={2} maxPolarAngle={Math.PI/2 - 0.05} />
       </Canvas>
       
       {/* 2D Overlay layer for context over the 3D Nexus */}
@@ -77,7 +77,7 @@ export default function NexusHub3D({ onNavigate }: NexusHub3DProps) {
            Simulation <span className="text-blue-500 text-shadow-sm">Nexus</span>
          </h1>
          <p className="mt-2 text-[#00ffcc] font-mono text-[10px] tracking-[0.2em] uppercase">
-            Double-Tap Or Click a Portal to Enter
+            Select a Portal to Enter
          </p>
       </div>
     </div>

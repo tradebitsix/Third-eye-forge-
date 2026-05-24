@@ -1012,7 +1012,7 @@ export default function PrintLab() {
               <GeneratedObject activePrint={activePrint} imagePreview={imagePreview} scaleOverride={modelScale / 100} uploadedGeometry={uploadedGeometry} />
 
               <ContactShadows position={[0, 0, 0]} opacity={0.4} scale={40} blur={2} far={10} />
-              <OrbitControls makeDefault minPolarAngle={0} maxPolarAngle={Math.PI / 2 - 0.05} minDistance={5} maxDistance={50} />
+              <OrbitControls makeDefault enableDamping dampingFactor={0.02} rotateSpeed={1.0} zoomSpeed={1.2} minPolarAngle={0} maxPolarAngle={Math.PI / 2 - 0.05} minDistance={5} maxDistance={50} />
             </Canvas>
           </WebGLErrorBoundary>
         )}

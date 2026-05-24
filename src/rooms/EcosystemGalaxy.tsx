@@ -187,6 +187,10 @@ function AgentGalaxy({ agents, selectedAgent, onSelectAgent }: { agents: AgentBu
         enablePan={true} 
         enableRotate={true} 
         enableZoom={true}
+        enableDamping={true}
+        dampingFactor={0.03}
+        rotateSpeed={1.0}
+        zoomSpeed={1.2}
         autoRotate={!selectedAgent}
         autoRotateSpeed={0.5} 
       />

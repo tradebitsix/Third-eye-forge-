@@ -852,7 +852,7 @@ export default function ThirdEyeForge({ onNavigate }: ThirdEyeForgeProps) {
             {/* Triple-Blend Sentient Hands using WebXR (fallback enabled), FABRIK, Qi Sway, Markley Averaging */}
             <SentientHands qiIntensity={qiIntensity} onPinch={handlePinch} />
 
-            <OrbitControls enablePan={true} enableRotate={true} />
+            <OrbitControls enablePan={true} enableRotate={true} enableDamping={true} dampingFactor={0.02} rotateSpeed={1.0} zoomSpeed={1.2} />
           </XR>
         </Canvas>
       </WebGLErrorBoundary>

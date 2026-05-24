@@ -278,6 +278,10 @@ export default function ConstructionSimulator() {
 
             <OrbitControls 
               target={[0, 2, 0]} 
+              enableDamping={true}
+              dampingFactor={0.02}
+              rotateSpeed={1.0}
+              zoomSpeed={1.2}
               minPolarAngle={0} 
               maxPolarAngle={Math.PI / 2 + 0.1}
               minDistance={3}

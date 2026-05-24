@@ -39,7 +39,7 @@ export default function CosmicPortal({ position, scale = 1, label, targetRoom, o
       </mesh>
 
       {/* Main glowing panel */}
-      <mesh onDoubleClick={handleEnter} onClick={() => { /* highlight */ }}>
+      <mesh onClick={handleEnter} onDoubleClick={handleEnter}>
         <planeGeometry args={[2.8*scale, 4.2*scale]} />
         <meshStandardMaterial emissive="#00ffff" emissiveIntensity={0.5} roughness={0.05} metalness={0.95} color="#000" />
       </mesh>
@@ -68,13 +68,6 @@ export default function CosmicPortal({ position, scale = 1, label, targetRoom, o
           <meshBasicMaterial color="#7c3aed" transparent opacity={0.6} />
         </mesh>
       </group>
-
-      {/* Tooltip */}
-      <Html position={[0, -2.8*scale, 0]} style={{pointerEvents: 'none'}} center>
-        <div className="bg-black/80 border border-cyan-400/50 text-cyan-300 text-[10px] uppercase tracking-widest px-4 py-2 rounded font-mono whitespace-nowrap">
-          Double-tap / Click to enter
-        </div>
-      </Html>
     </group>
   );
 }
