@@ -1,6 +1,6 @@
-import React, { useRef } from 'react';
+import React, { useRef, useMemo, useState } from 'react';
 import { useFrame } from '@react-three/fiber';
-import { Text, Html } from '@react-three/drei';
+import { Text } from '@react-three/drei';
 import * as THREE from 'three';
 
 interface CosmicPortalProps {
@@ -9,64 +9,335 @@ interface CosmicPortalProps {
   label: string;
   targetRoom: string;
   onEnter: (room: string) => void;
-  imageTextureUrl?: string; // for dynamic logo/content
+  imageTextureUrl?: string; // Kept for interface compatibility
 }
 
-export default function CosmicPortal({ position, scale = 1, label, targetRoom, onEnter, imageTextureUrl }: CosmicPortalProps) {
+export default function CosmicPortal({ position, scale = 1, label, targetRoom, onEnter }: CosmicPortalProps) {
   const groupRef = useRef<THREE.Group>(null!);
-  const vortexRef = useRef<THREE.Group>(null!);
+  const spiralGroupRef = useRef<THREE.Group>(null!);
+  const orbitGroupRef = useRef<THREE.Group>(null!);
+
+  const [hovered, setHovered] = useState(false);
+  const hoverProgressRef = useRef(0);
+
+  // Generate 32 rectangular blocks in a spiral layout for the decorative lithophane center
+  const spiralBoxes = useMemo(() => {
+    const items = [];
+    const count = 32;
+    for (let i = 0; i < count; i++) {
+      const percentage = i / count;
+      const angle = percentage * Math.PI * 5; // 2.5 revolutions
+      const radius = (0.2 + percentage * 0.75) * scale;
+      const x = Math.sin(angle) * radius;
+      const y = Math.cos(angle) * radius - 0.1 * scale;
+      const z = percentage * 0.08 * scale;
+      const boxSize = (0.05 + percentage * 0.08) * scale;
+      items.push({ x, y, z, size: boxSize, angle });
+    }
+    return items;
+  }, [scale]);
+
+  // Orbit parameters for the five larger metallic orbiting cubes from the Grok image
+  const orbitCubes = useMemo(() => {
+    return [
+      { basePos: [-1.2 * scale, 0.8 * scale, 0.2 * scale], size: 0.3 * scale, phase: 0 },
+      { basePos: [1.2 * scale, 0.7 * scale, 0.1 * scale], size: 0.32 * scale, phase: 1.2 },
+      { basePos: [1.4 * scale, -0.6 * scale, 0.3 * scale], size: 0.35 * scale, phase: 2.5 },
+      { basePos: [-1.1 * scale, -1.0 * scale, 0.15 * scale], size: 0.28 * scale, phase: 3.8 },
+      { basePos: [-1.5 * scale, -0.1 * scale, 0.25 * scale], size: 0.31 * scale, phase: 5.0 },
+    ];
+  }, [scale]);
 
   useFrame((state) => {
+    const t = state.clock.getElapsedTime();
+    
+    // Smoothly interpolate hover progress
+    const targetProgress = hovered ? 1 : 0;
+    hoverProgressRef.current = THREE.MathUtils.lerp(hoverProgressRef.current, targetProgress, 0.15);
+
+    // Smooth mystical float of the entire plaque
     if (groupRef.current) {
-        groupRef.current.rotation.y = Math.sin(state.clock.getElapsedTime() * 0.2) * 0.1; // gentle mystical float
+      groupRef.current.rotation.y = Math.sin(t * 0.3) * 0.05;
+      groupRef.current.position.y = position[1] + Math.sin(t * 0.8) * 0.08 * scale;
     }
-    if (vortexRef.current) {
-        vortexRef.current.rotation.z = state.clock.getElapsedTime() * 0.4;
+
+    // Spin the main central spiral vortex - scales up and rotates faster on hover!
+    if (spiralGroupRef.current) {
+      spiralGroupRef.current.rotation.z = -t * (0.4 + hoverProgressRef.current * 0.5);
+      spiralGroupRef.current.scale.setScalar(1.0 + hoverProgressRef.current * 0.1);
+    }
+
+    // Animate larger orbiting cubes with individual wave cycles to mimic floating in depth
+    if (orbitGroupRef.current) {
+      const children = orbitGroupRef.current.children;
+      orbitCubes.forEach((cube, i) => {
+        if (children[i]) {
+          const mesh = children[i] as THREE.Mesh;
+          const wobble = Math.sin(t * 1.5 + cube.phase) * 0.06 * scale;
+          mesh.position.set(
+            cube.basePos[0] + wobble * 0.5,
+            cube.basePos[1] + wobble,
+            cube.basePos[2] + Math.cos(t + cube.phase) * 0.05 * scale
+          );
+          mesh.rotation.x = t * (0.2 + hoverProgressRef.current * 0.3) + cube.phase;
+          mesh.rotation.y = t * (0.3 + hoverProgressRef.current * 0.3) + cube.phase;
+        }
+      });
     }
   });
 
-  const handleEnter = () => {
-    // Smooth camera push + transition
+  const handleEnter = (e: any) => {
+    e.stopPropagation();
+    document.body.style.cursor = 'auto'; // Reset cursor
     onEnter(targetRoom);
   };
 
+  const handlePointerOver = (e: any) => {
+    e.stopPropagation();
+    document.body.style.cursor = 'pointer';
+    setHovered(true);
+  };
+
+  const handlePointerOut = (e: any) => {
+    e.stopPropagation();
+    document.body.style.cursor = 'auto';
+    setHovered(false);
+  };
+
   return (
-    <group ref={groupRef} position={position} scale={scale}>
-      {/* Nebula backdrop */}
+    <group ref={groupRef} position={[position[0], position[1], position[2]]}>
+      {/* 0. Dedicated Invisible Click Catching Slate */}
+      <mesh 
+        position={[0, 0, 0.1]} 
+        onClick={handleEnter}
+        onPointerOver={handlePointerOver}
+        onPointerOut={handlePointerOut}
+      >
+        <planeGeometry args={[3.2 * scale, 4.8 * scale]} />
+        <meshBasicMaterial visible={false} color="#00ffcc" />
+      </mesh>
+
+      {/* 1. Backdrop Glow Layer */}
       <mesh position={[0, 0, -0.2]}>
-        <planeGeometry args={[4*scale, 5.5*scale]} />
-        <meshBasicMaterial color="#1a0033" transparent opacity={0.7} />
+        <planeGeometry args={[3.2 * scale, 4.8 * scale]} />
+        <meshBasicMaterial color="#00ffff" transparent opacity={0.05} />
       </mesh>
 
-      {/* Main glowing panel */}
-      <mesh onClick={handleEnter} onDoubleClick={handleEnter}>
-        <planeGeometry args={[2.8*scale, 4.2*scale]} />
-        <meshStandardMaterial emissive="#00ffff" emissiveIntensity={0.5} roughness={0.05} metalness={0.95} color="#000" />
-      </mesh>
-
-      {/* Floating cubes orbit */}
-      {Array.from({length: 8}).map((_, i) => (
-        <mesh key={i} position={[
-          Math.sin(i * 1.5) * 2.2 * scale,
-          Math.cos(i) * 1.8 * scale,
-          -1 + Math.random()
-        ]}>
-          <boxGeometry args={[0.25*scale, 0.25*scale, 0.25*scale]} />
-          <meshStandardMaterial color="#a5f3fc" emissive="#00ffff" wireframe />
+      {/* 2. Primary Sci-Fi PCB / Lithophane Plaque Body (100x150x4 aspect) */}
+      <group>
+        {/* Outer glowing border frame */}
+        <mesh position={[0, 0, -0.05]}>
+          <planeGeometry args={[2.55 * scale, 3.85 * scale]} />
+          <meshBasicMaterial color="#00ffcc" transparent opacity={0.4} />
         </mesh>
-      ))}
 
-      {/* Dynamic Text / Logo */}
-      <Text position={[0, 0.3*scale, 0.1]} fontSize={0.4*scale} color="#67e8f9" anchorX="center" maxWidth={2.5 * scale} textAlign="center">
-        {label}
+        {/* Intricate thin cyber lines grid layout */}
+        <mesh position={[0, 0, -0.045]}>
+          <planeGeometry args={[2.5 * scale, 3.8 * scale]} />
+          <meshBasicMaterial color="#001122" />
+        </mesh>
+
+        {/* Main translucent glass slate plate */}
+        <mesh position={[0, 0, -0.04]}>
+          <planeGeometry args={[2.45 * scale, 3.75 * scale]} />
+          <meshStandardMaterial 
+            color="#08090e" 
+            roughness={0.15} 
+            metalness={0.9} 
+            transparent 
+            opacity={0.92} 
+          />
+        </mesh>
+      </group>
+
+      {/* 3. Outer cybernetic neon corner bracket guidelines */}
+      <group position={[0, 0, -0.02]}>
+        {/* Top-left bracket */}
+        <group position={[-1.15 * scale, 1.8 * scale, 0]}>
+          <mesh position={[0.1 * scale, 0, 0]}>
+            <planeGeometry args={[0.2 * scale, 0.02 * scale]} />
+            <meshBasicMaterial color="#00ffcc" />
+          </mesh>
+          <mesh position={[0, -0.1 * scale, 0]}>
+            <planeGeometry args={[0.02 * scale, 0.2 * scale]} />
+            <meshBasicMaterial color="#00ffcc" />
+          </mesh>
+        </group>
+        {/* Top-right bracket */}
+        <group position={[1.15 * scale, 1.8 * scale, 0]}>
+          <mesh position={[-0.1 * scale, 0, 0]}>
+            <planeGeometry args={[0.2 * scale, 0.02 * scale]} />
+            <meshBasicMaterial color="#00ffcc" />
+          </mesh>
+          <mesh position={[0, -0.1 * scale, 0]}>
+            <planeGeometry args={[0.02 * scale, 0.2 * scale]} />
+            <meshBasicMaterial color="#00ffcc" />
+          </mesh>
+        </group>
+        {/* Bottom-left bracket */}
+        <group position={[-1.15 * scale, -1.8 * scale, 0]}>
+          <mesh position={[0.1 * scale, 0, 0]}>
+            <planeGeometry args={[0.2 * scale, 0.02 * scale]} />
+            <meshBasicMaterial color="#00ffcc" />
+          </mesh>
+          <mesh position={[0, 0.1 * scale, 0]}>
+            <planeGeometry args={[0.02 * scale, 0.2 * scale]} />
+            <meshBasicMaterial color="#00ffcc" />
+          </mesh>
+        </group>
+        {/* Bottom-right bracket */}
+        <group position={[1.15 * scale, -1.8 * scale, 0]}>
+          <mesh position={[-0.1 * scale, 0, 0]}>
+            <planeGeometry args={[0.2 * scale, 0.02 * scale]} />
+            <meshBasicMaterial color="#00ffcc" />
+          </mesh>
+          <mesh position={[0, 0.1 * scale, 0]}>
+            <planeGeometry args={[0.02 * scale, 0.2 * scale]} />
+            <meshBasicMaterial color="#00ffcc" />
+          </mesh>
+        </group>
+      </group>
+
+      {/* 4. Top HUD Display Elements */}
+      <Text 
+        position={[-1.0 * scale, 1.6 * scale, 0.02]} 
+        fontSize={0.075 * scale} 
+        color="#70a0ff" 
+        anchorX="left" 
+        maxWidth={1.0 * scale}
+      >
+        DESTINATION
+      </Text>
+      <Text 
+        position={[1.0 * scale, 1.6 * scale, 0.02]} 
+        fontSize={0.065 * scale} 
+        color="#00ffcc" 
+        anchorX="right"
+      >
+        ACTIVE: 100%
       </Text>
 
-      {/* Vortex */}
-      <group ref={vortexRef}>
-        <mesh>
-          <torusGeometry args={[1.6*scale, 0.12*scale, 12, 48]} />
-          <meshBasicMaterial color="#7c3aed" transparent opacity={0.6} />
+      {/* A tiny HUD graph representation */}
+      <group position={[-1.0 * scale, 1.4 * scale, 0.02]}>
+        {Array.from({ length: 10 }).map((_, i) => (
+          <mesh key={i} position={[i * 0.06 * scale, 0, 0]}>
+            <planeGeometry args={[0.03 * scale, (0.05 + Math.sin(i * 0.8) * 0.08 + 0.1) * scale]} />
+            <meshBasicMaterial color="#00aa88" />
+          </mesh>
+        ))}
+      </group>
+
+      {/* 5. "The" Branding Text styled exactly like Grok design */}
+      <Text 
+        position={[0, 1.1 * scale, 0.05]} 
+        fontSize={0.48 * scale} 
+        color="#ffffff" 
+        anchorX="center" 
+        anchorY="middle"
+        outlineWidth={0.025 * scale}
+        outlineColor="#003366"
+        outlineOpacity={0.9}
+      >
+        The
+      </Text>
+
+      {/* 6. Centered Whirlpool / Vortex Swirl */}
+      <group ref={spiralGroupRef} position={[0, -0.1 * scale, 0.03]}>
+        {/* Delicate glowing circular backing */}
+        <mesh position={[0, 0, -0.01]}>
+          <ringGeometry args={[0.1 * scale, 1.05 * scale, 64]} />
+          <meshBasicMaterial color="#002244" transparent opacity={0.4} />
         </mesh>
+        
+        {spiralBoxes.map((box, i) => (
+          <mesh key={i} position={[box.x, box.y, box.z]} rotation={[0, 0, box.angle + Math.PI / 4]}>
+            <boxGeometry args={[box.size, box.size * 1.5, box.size * 0.3]} />
+            <meshStandardMaterial 
+              color="#00ffcc" 
+              emissive="#0088cc" 
+              emissiveIntensity={0.6}
+              roughness={0.1}
+              metalness={0.9}
+            />
+          </mesh>
+        ))}
+      </group>
+
+      {/* 7. Large floating silver-blue orbit blocks flanking the vortex */}
+      <group ref={orbitGroupRef}>
+        {orbitCubes.map((cube, i) => (
+          <mesh key={i} position={cube.basePos as [number, number, number]}>
+            <boxGeometry args={[cube.size, cube.size, cube.size]} />
+            <meshStandardMaterial 
+              color="#e0f0ff" 
+              emissive="#113355"
+              roughness={0.04} 
+              metalness={0.98} 
+            />
+          </mesh>
+        ))}
+      </group>
+
+      {/* 8. "One" Branding Text styled exactly like Grok design */}
+      <Text 
+        position={[0, -1.2 * scale, 0.05]} 
+        fontSize={0.48 * scale} 
+        color="#ffffff" 
+        anchorX="center" 
+        anchorY="middle"
+        outlineWidth={0.025 * scale}
+        outlineColor="#003366"
+        outlineOpacity={0.9}
+      >
+        One
+      </Text>
+
+      {/* 9. Bottom Details & Sign-off signature */}
+      <Text 
+        position={[-1.0 * scale, -1.6 * scale, 0.02]} 
+        fontSize={0.06 * scale} 
+        color="#5070a0" 
+        anchorX="left"
+      >
+        PLA - LITHOPHANE
+      </Text>
+      <Text 
+        position={[1.0 * scale, -1.6 * scale, 0.02]} 
+        fontSize={0.07 * scale} 
+        color="#ffffff" 
+        anchorX="right"
+      >
+        By FanzOfTheOne
+      </Text>
+
+      {/* 10. MAIN ENTRANCE TITLE: Displayed proudly below the entrance door */}
+      <group position={[0, -2.4 * scale, 0]}>
+        {/* Subtle decorative target cursor bracket */}
+        <mesh position={[0, 0.35 * scale, 0]}>
+          <planeGeometry args={[1.8 * scale, 0.015 * scale]} />
+          <meshBasicMaterial color="#00ffcc" transparent opacity={0.3} />
+        </mesh>
+        
+        {/* Background glow capsule board for high-contrast legibility */}
+        <mesh position={[0, 0, -0.05]}>
+          <planeGeometry args={[2.0 * scale, 0.45 * scale]} />
+          <meshBasicMaterial color="#000000" transparent opacity={0.88} />
+        </mesh>
+        <mesh position={[0, 0, -0.06]}>
+          <planeGeometry args={[2.05 * scale, 0.5 * scale]} />
+          <meshBasicMaterial color="#00ffcc" transparent opacity={0.35} />
+        </mesh>
+
+        {/* Portal Entrance Label */}
+        <Text 
+          position={[0, 0, 0.02]} 
+          fontSize={0.21 * scale} 
+          color="#00ffcc" 
+          anchorX="center" 
+          anchorY="middle"
+        >
+          {`[ ${label} ]`}
+        </Text>
       </group>
     </group>
   );

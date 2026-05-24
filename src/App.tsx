@@ -67,9 +67,10 @@ export default function App() {
                    <div className="absolute bottom-6 left-1/2 -translate-x-1/2 z-30 opacity-60 hover:opacity-100 transition-opacity">
                      <button
                        onClick={() => toggleForce2DMode(true)}
-                       className="px-4 py-2 bg-black/80 hover:bg-red-900/50 border border-white/10 hover:border-red-500/50 text-[10px] text-white/50 hover:text-white rounded font-mono uppercase tracking-widest transition-all backdrop-blur-md shadow-2xl"
+                       className="px-6 py-2.5 bg-black/80 hover:bg-red-950/40 border border-white/5 hover:border-red-500/25 text-[10px] text-gray-400 hover:text-white rounded font-mono uppercase tracking-[0.16em] text-center transition-all duration-300 backdrop-blur-md shadow-2xl block"
                      >
-                       ⚠ Force 2D Grid Mode (GPU Crash Fallback)
+                       ▲ FORCE 2D GRID MODE
+                       <span className="block text-[8px] text-gray-500 font-mono tracking-wider mt-1">(GPU CRASH FALLBACK)</span>
                      </button>
                    </div>
                 </>

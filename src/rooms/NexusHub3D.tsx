@@ -72,12 +72,15 @@ export default function NexusHub3D({ onNavigate }: NexusHub3DProps) {
       </Canvas>
       
       {/* 2D Overlay layer for context over the 3D Nexus */}
-      <div className="absolute top-8 left-1/2 -translate-x-1/2 pointer-events-none z-30 text-center">
-         <h1 className="text-3xl md:text-5xl font-black text-white tracking-tighter uppercase font-sans drop-shadow-[0_0_10px_rgba(255,255,255,0.8)]">
-           Simulation <span className="text-blue-500 text-shadow-sm">Nexus</span>
+      <div className="absolute top-12 left-1/2 -translate-x-1/2 pointer-events-none z-30 text-center select-none">
+         <h1 className="text-4xl md:text-5xl font-extrabold text-white tracking-[0.15em] uppercase font-sans drop-shadow-[0_0_12px_rgba(255,255,255,0.5)] leading-tight">
+           SIMULATION
          </h1>
-         <p className="mt-2 text-[#00ffcc] font-mono text-[10px] tracking-[0.2em] uppercase">
-            Select a Portal to Enter
+         <h1 className="text-4xl md:text-5xl font-extrabold text-[#118bf2] tracking-[0.18em] uppercase font-sans drop-shadow-[0_0_15px_rgba(17,139,242,0.7)] leading-normal mt-1">
+           NEXUS
+         </h1>
+         <p className="mt-6 text-[#00ffcc] font-mono text-[10px] md:text-xs tracking-[0.25em] uppercase drop-shadow-[0_0_5px_rgba(0,255,204,0.3)]">
+            SELECT A PORTAL TO ENTER
          </p>
       </div>
     </div>

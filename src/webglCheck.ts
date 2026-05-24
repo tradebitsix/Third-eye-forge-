@@ -6,7 +6,10 @@ let isWebglSupported: boolean | null = null;
 
 if (typeof window !== 'undefined') {
   try {
-    webglFailedCached = localStorage.getItem('webgl_rendering_failed') === 'true';
+    // Proactively clear stale error flags left behind by the old/aggressive console.warn interceptor
+    localStorage.removeItem('webgl_rendering_failed');
+    localStorage.removeItem('force_2d_mode');
+    webglFailedCached = false;
   } catch(e) {}
 }
 
@@ -121,56 +124,12 @@ if (typeof window !== 'undefined') {
     markWebGLFailed();
   }, true);
 
-  // 2. Patch console.error and console.warn to capture three.js/canvas initialization issues
-  const originalConsoleError = console.error;
-  const originalConsoleWarn = console.warn;
-
-  const interceptAndDetectWebGLFailure = (args: any[]) => {
-    const errorString = args.map(arg => {
-      if (arg instanceof Error) {
-        return arg.message + '\n' + (arg.stack || '');
-      }
-      try {
-        return typeof arg === 'object' ? JSON.stringify(arg) : String(arg);
-      } catch (e) {
-        return String(arg);
-      }
-    }).join(' ');
-
-    const isFailureReason = 
-      errorString.includes('WebGLRenderer') ||
-      errorString.includes('WebGL context') ||
-      errorString.includes('Error creating WebGL') ||
-      errorString.includes('not connected to three.js') ||
-      errorString.includes('missing the <XR> component') ||
-      errorString.includes('canvas is not yet loaded') ||
-      errorString.includes('BindToCurrentSequence failed') ||
-      errorString.includes('ANGLE');
-
-    if (isFailureReason) {
-      // Trigger instant safe 2D fallback mode
-      markWebGLFailed();
-    }
-  };
-
-  console.error = function(...args: any[]) {
-    interceptAndDetectWebGLFailure(args);
-    originalConsoleError.apply(console, args);
-  };
-
-  console.warn = function(...args: any[]) {
-    interceptAndDetectWebGLFailure(args);
-    originalConsoleWarn.apply(console, args);
-  };
-
-  // 3. Catch general unhandled runtime exceptions pointing to Three.js or canvas
+  // 2. Catch actual unhandled runtime fatal exceptions that contain explicit crash signatures
   window.addEventListener('error', (event) => {
     const message = event.message || '';
     if (
-      message.includes('WebGL') ||
-      message.includes('Three') ||
-      message.includes('three.js') ||
-      message.includes('@react-three')
+      message.includes('WebGL unsupported') ||
+      message.includes('CONTEXT_LOST')
     ) {
       markWebGLFailed();
     }
@@ -181,10 +140,8 @@ if (typeof window !== 'undefined') {
     const reasonMessage = reason && (reason.message || String(reason));
     if (
       reasonMessage &&
-      (reasonMessage.includes('WebGL') ||
-       reasonMessage.includes('Three') ||
-       reasonMessage.includes('three.js') ||
-       reasonMessage.includes('@react-three'))
+      (reasonMessage.includes('WebGL unsupported') ||
+       reasonMessage.includes('CONTEXT_LOST'))
     ) {
       markWebGLFailed();
     }

@@ -22,6 +22,8 @@ const GEMINI_API_KEY = (() => {
 import AgencyPath, { NodeData } from './AgencyPath';
 import SentientHands from './SentientHands';
 import { spatialAudio } from './audio/SpatialSynth';
+import { ForgeShockwave } from './components/ForgeShockwave';
+import { GazeTeleporter } from './components/GazeTeleporter';
 
 function AudioListenerUpdater() {
   const { camera } = useThree();
@@ -139,6 +141,22 @@ export default function ThirdEyeForge({ onNavigate }: ThirdEyeForgeProps) {
   const [isGenerating, setIsGenerating] = useState(false);
   const [pendingSyntheses, setPendingSyntheses] = useState<number[]>([]);
   const [isMenuOpen, setIsMenuOpen] = useState(false);
+  const [shockwaveTriggers, setShockwaveTriggers] = useState<{ id: number; time: number }[]>([]);
+  const controlsRef = useRef<any>(null);
+
+  const triggerShockwave = useCallback(() => {
+    setShockwaveTriggers(prev => [...prev, { id: Math.random(), time: Date.now() }]);
+  }, []);
+
+  useEffect(() => {
+    if (shockwaveTriggers.length > 0) {
+      const timer = setTimeout(() => {
+        const now = Date.now();
+        setShockwaveTriggers(prev => prev.filter(t => now - t.time < 3000));
+      }, 3100);
+      return () => clearTimeout(timer);
+    }
+  }, [shockwaveTriggers]);
 
   useEffect(() => {
     async function loadAtoms() {
@@ -306,6 +324,7 @@ export default function ThirdEyeForge({ onNavigate }: ThirdEyeForgeProps) {
               setStatus(`SYSTEM: AGENCY ASSERTED: '${finalQuote.toUpperCase()}'`);
               setFlashQuote(finalQuote.toUpperCase());
               setTimeout(() => setFlashQuote(null), 4000);
+              triggerShockwave();
               
               try { spatialAudio.playFlare(newNodes[index].position); } catch(e) {}
           }
@@ -320,9 +339,12 @@ export default function ThirdEyeForge({ onNavigate }: ThirdEyeForgeProps) {
       setStatus(`SYNTHESIS ERROR: ${errorMsg}`);
       setNodes(prev => {
           const newNodes = [...prev];
-          newNodes[index].healed = true;
-          newNodes[index].quote = "WISDOM FORGED FROM CHAOS (LOCAL SYNTHESIS)";
-          setQiIntensity(3.0);
+          if (!newNodes[index].healed) {
+              newNodes[index].healed = true;
+              newNodes[index].quote = "WISDOM FORGED FROM CHAOS (LOCAL SYNTHESIS)";
+              setQiIntensity(3.0);
+              triggerShockwave();
+          }
           return newNodes;
       });
     } finally {
@@ -816,8 +838,13 @@ export default function ThirdEyeForge({ onNavigate }: ThirdEyeForgeProps) {
             <GazeIntegration nodes={nodes} onHeal={triggerHeal} />
             <AmbientParticles />
             
-            {/* Subtle Cyber Grid Floor */}
+            {/* Dynamic additive blending laser shockwave radiating from the Central Forge */}
+            <ForgeShockwave triggers={shockwaveTriggers} />
+                    {/* Subtle Cyber Grid Floor */}
             <gridHelper args={[40, 40, 0x00ffcc, 0x002222]} position={[0, -1, 0]} />
+
+            {/* Gaze-based Teleportation on the floor grid */}
+            <GazeTeleporter controlsRef={controlsRef} />
 
             {/* Cosmic Portals to other zones */}
             {onNavigate && (
@@ -852,7 +879,7 @@ export default function ThirdEyeForge({ onNavigate }: ThirdEyeForgeProps) {
             {/* Triple-Blend Sentient Hands using WebXR (fallback enabled), FABRIK, Qi Sway, Markley Averaging */}
             <SentientHands qiIntensity={qiIntensity} onPinch={handlePinch} />
 
-            <OrbitControls enablePan={true} enableRotate={true} enableDamping={true} dampingFactor={0.02} rotateSpeed={1.0} zoomSpeed={1.2} />
+            <OrbitControls ref={controlsRef} makeDefault enablePan={true} enableRotate={true} enableDamping={true} dampingFactor={0.02} rotateSpeed={1.0} zoomSpeed={1.2} />
           </XR>
         </Canvas>
       </WebGLErrorBoundary>

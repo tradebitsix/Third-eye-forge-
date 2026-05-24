@@ -1,6 +1,7 @@
 'use client';
 import React, { useRef, useMemo } from 'react';
 import { useFrame, useThree } from '@react-three/fiber';
+import { Html } from '@react-three/drei';
 import * as THREE from 'three';
 import { MarkleyQuaternionAverager } from './markleyQuaternionAverager';
 
@@ -27,6 +28,7 @@ export default function SentientHands({
   const leftHandRef = useRef<THREE.Group>(null);
   const rightHandRef = useRef<THREE.Group>(null);
   const qiBallRef = useRef<THREE.Mesh>(null);
+  const tooltipRef = useRef<THREE.Group>(null);
   const pinchTriggered = useRef(false);
 
   useFrame((state) => {
@@ -188,8 +190,14 @@ export default function SentientHands({
     // Qi Ball expands based on hand distance bridging together
     if (qiBallRef.current) {
       const dist = leftPos.distanceTo(rightPos);
-      qiBallRef.current.position.copy(leftPos.clone().lerp(rightPos, 0.5));
-      qiBallRef.current.scale.setScalar(0.1 + (1 - Math.min(dist, 1)) * 0.2 * qiIntensity);
+      const center = leftPos.clone().lerp(rightPos, 0.5);
+      qiBallRef.current.position.copy(center);
+      const ballScale = 0.1 + (1 - Math.min(dist, 1)) * 0.2 * qiIntensity;
+      qiBallRef.current.scale.setScalar(ballScale);
+
+      if (tooltipRef.current) {
+        tooltipRef.current.position.set(center.x, center.y + ballScale + 0.18, center.z);
+      }
     }
   });
 
@@ -211,6 +219,21 @@ export default function SentientHands({
          <sphereGeometry args={[1]} />
          <meshBasicMaterial color="#aaffff" transparent opacity={0.4} />
       </mesh>
+
+      {qiIntensity > 0 && (
+        <group ref={tooltipRef}>
+          <Html center distanceFactor={6} pointerEvents="none">
+            <div className="flex flex-col items-center justify-center bg-black/90 backdrop-blur-xl px-3 py-1.5 rounded-lg border border-cyan-500/40 shadow-[0_0_15px_rgba(0,255,204,0.45),inset_0_0_10px_rgba(0,255,204,0.3)] select-none text-center min-w-[100px] transform transition-all duration-300">
+              <span className="text-[8px] font-mono tracking-[0.25em] text-[#00ffcc] uppercase leading-none mb-1">
+                QI INTENSITY
+              </span>
+              <span className="text-sm font-extrabold font-sans text-white tracking-widest leading-none drop-shadow-[0_0_5px_rgba(0,255,204,0.5)]">
+                {qiIntensity.toFixed(2)}
+              </span>
+            </div>
+          </Html>
+        </group>
+      )}
     </>
   );
 }
