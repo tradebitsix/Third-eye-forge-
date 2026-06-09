@@ -203,6 +203,7 @@ export default function EcosystemGalaxy() {
   const [selectedAgent, setSelectedAgent] = useState<AgentBuild | null>(null);
   const [showMap, setShowMap] = useState(false);
   const [agents, setAgents] = useState<AgentBuild[]>([]);
+  const [vrStatus, setVrStatus] = useState<string | null>(null);
 
   // Automatically mark intro as complete on load if in 2D fallback to provide instant response
   const isWebGL = useWebGLAvailable();
@@ -477,18 +478,29 @@ export default function EcosystemGalaxy() {
           <div className="flex flex-col items-end pointer-events-auto">
              <button 
                onClick={async () => {
-                 try { await store.enterVR(); } 
-                 catch(e) { console.error(e); alert("VR not supported on this device.");}
+                 try { 
+                    await store.enterVR(); 
+                 } catch (e: any) { 
+                    console.info("Ecosystem VR session unsupported/restricted inside iframe sandbox container:", e); 
+                    setVrStatus(e.message || "This secure WebXR VR session cannot be loaded inside the current sandboxed context. Open in a new tab!");
+                    setTimeout(() => setVrStatus(null), 6000);
+                 }
                }}
-               className="mb-4 px-6 py-2 bg-[#ffcc00]/20 hover:bg-[#ffcc00]/40 border border-[#ffcc00] text-[#ffcc00] font-mono text-[10px] tracking-[0.2em] transition-all rounded shadow-[0_0_15px_rgba(255,204,0,0.2)]"
+               className="mb-2 px-6 py-2 bg-[#ffcc00]/20 hover:bg-[#ffcc00]/40 border border-[#ffcc00] text-[#ffcc00] font-mono text-[10px] tracking-[0.2em] transition-all rounded shadow-[0_0_15px_rgba(255,204,0,0.2)] cursor-pointer"
              >
                ENTER VR
              </button>
 
+             {vrStatus && (
+               <div className="mb-4 max-w-xs p-3 bg-black/90 border border-amber-500/40 text-amber-200 text-[9px] font-mono rounded shadow-[0_0_20px_rgba(245,158,11,0.25)] text-right animate-pulse">
+                 ⚠️ {vrStatus}
+               </div>
+             )}
+
              {/* Holographic Treasure Map Toggle */}
              <button
                onClick={() => setShowMap(!showMap)}
-               className="px-4 py-2 bg-blue-500/10 hover:bg-blue-500/30 border border-blue-500 text-blue-400 font-mono text-[10px] tracking-widest transition-all rounded"
+               className="px-4 py-2 bg-blue-500/10 hover:bg-blue-500/30 border border-blue-500 text-blue-400 font-mono text-[10px] tracking-widest transition-all rounded cursor-pointer"
              >
                {showMap ? 'HIDE MAP' : 'OPEN ECOSYSTEM MAP'}
              </button>

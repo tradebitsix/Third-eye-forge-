@@ -6,11 +6,15 @@ import PrintLab from './rooms/PrintLab';
 import { motion, AnimatePresence } from 'motion/react';
 import { xrStore } from './xrStore';
 import { toggleForce2DMode, resetWebGLStatus, useWebGLAvailable } from './webglCheck';
+import { WebGLErrorBoundary } from './components/WebGLErrorBoundary';
 
 import NexusHub3D from './rooms/NexusHub3D';
 
 export default function App() {
-  const isWebGL = useWebGLAvailable();
+  // Hardcode to true to ensure 3D spatial interface is loaded by default.
+  // The WebGLErrorBoundary will catch actual render failures if they occur.
+  const isWebGL = true;
+  
   const [currentRoom, setCurrentRoom] = useState<string>(() => {
     if (typeof window !== 'undefined') {
       try {
@@ -56,11 +60,19 @@ export default function App() {
              className="w-full h-full absolute inset-0 z-20 flex flex-col items-center justify-center bg-[#050505]"
              initial={{ opacity: 0 }}
              animate={{ opacity: 1 }}
-             exit={{ opacity: 0 }}
+             exit={{ opacity: 0, scale: 1.1, filter: 'blur(10px)' }}
+             transition={{ duration: 0.6 }}
           >
              {isWebGL ? (
                 // GPU ACTIVE: Use 3D Cosmic Portals
-                <>
+                <WebGLErrorBoundary
+                  fallback={
+                    <div className="flex-1 flex flex-col items-center justify-center text-xs font-mono text-cyan-400 uppercase tracking-widest bg-[#050505] p-4 text-center z-30">
+                      <span>3D Space Initialization Core Error.</span>
+                      <span className="text-gray-500 mt-2">Activating 2D Active Layout...</span>
+                    </div>
+                  }
+                >
                    <NexusHub3D onNavigate={navigateTo} />
                    
                    {/* Fallback override floating panel for 3D */}
@@ -73,7 +85,7 @@ export default function App() {
                        <span className="block text-[8px] text-gray-500 font-mono tracking-wider mt-1">(GPU CRASH FALLBACK)</span>
                      </button>
                    </div>
-                </>
+                </WebGLErrorBoundary>
              ) : (
                 // DRIVER FALLBACK: 2D Grid
                 <>
@@ -182,36 +194,62 @@ export default function App() {
              )}
           </motion.div>
         )}
-        </AnimatePresence>
-
-        {/* ROOM VIEWS - CONDITIONALLY RENDERED TO CONSERVE WEBGL CONTEXTS AND PREVENT RENDERING CRASHES */}
         {currentRoom === 'forge' && (
-          <div className="w-full h-full absolute inset-0 z-10 animate-in fade-in duration-300">
+          <motion.div 
+             key="forge"
+             initial={{ opacity: 0, x: 50 }}
+             animate={{ opacity: 1, x: 0 }}
+             exit={{ opacity: 0, scale: 0.95, filter: 'blur(5px)' }}
+             transition={{ duration: 0.5 }}
+             className="w-full h-full absolute inset-0 z-10"
+          >
               <button onClick={handleExit} className="absolute bottom-6 left-6 z-50 text-[#00ffcc] font-mono text-[10px] hover:bg-[#00ffcc]/10 uppercase tracking-widest bg-black/50 px-4 py-2 border border-[#00ffcc]/30 backdrop-blur-md rounded transition-colors">&lt; EXIT / RETURN TO NEXUS</button>
               <ThirdEyeForge onNavigate={navigateTo} />
-          </div>
+          </motion.div>
         )}
 
         {currentRoom === 'ecosystem' && (
-          <div className="w-full h-full absolute inset-0 z-10 animate-in fade-in duration-300">
+          <motion.div 
+             key="ecosystem"
+             initial={{ opacity: 0, x: -50 }}
+             animate={{ opacity: 1, x: 0 }}
+             exit={{ opacity: 0, scale: 0.95, filter: 'blur(5px)' }}
+             transition={{ duration: 0.5 }}
+             className="w-full h-full absolute inset-0 z-10"
+          >
               <button onClick={handleExit} className="absolute bottom-6 left-6 z-50 text-[#ffcc00] font-mono text-[10px] hover:bg-[#ffcc00]/10 uppercase tracking-widest bg-black/50 px-4 py-2 border border-[#ffcc00]/30 backdrop-blur-md rounded transition-colors">&lt; EXIT / RETURN TO NEXUS</button>
               <EcosystemGalaxy />
-          </div>
+          </motion.div>
         )}
 
         {currentRoom === 'construction_sim' && (
-          <div className="w-full h-full absolute inset-0 z-10 animate-in fade-in duration-300">
+          <motion.div 
+             key="construction_sim"
+             initial={{ opacity: 0, y: 50 }}
+             animate={{ opacity: 1, y: 0 }}
+             exit={{ opacity: 0, scale: 0.95, filter: 'blur(5px)' }}
+             transition={{ duration: 0.5 }}
+             className="w-full h-full absolute inset-0 z-10"
+          >
               <button onClick={handleExit} className="absolute bottom-6 left-6 z-50 text-orange-500 font-mono text-[10px] hover:bg-orange-500/10 uppercase tracking-widest bg-black/50 px-4 py-2 border border-orange-500/30 backdrop-blur-md rounded transition-colors">&lt; EXIT / RETURN TO NEXUS</button>
               <ConstructionSimulator />
-          </div>
+          </motion.div>
         )}
 
         {currentRoom === 'print_lab' && (
-          <div className="w-full h-full absolute inset-0 z-10 animate-in fade-in duration-300">
+          <motion.div 
+             key="print_lab"
+             initial={{ opacity: 0, y: -50 }}
+             animate={{ opacity: 1, y: 0 }}
+             exit={{ opacity: 0, scale: 0.95, filter: 'blur(5px)' }}
+             transition={{ duration: 0.5 }}
+             className="w-full h-full absolute inset-0 z-10"
+          >
               <button onClick={handleExit} className="absolute bottom-6 left-6 z-50 text-blue-500 font-mono text-[10px] hover:bg-blue-500/10 uppercase tracking-widest bg-black/50 px-4 py-2 border border-blue-500/30 backdrop-blur-md rounded transition-colors">&lt; EXIT / RETURN TO NEXUS</button>
               <PrintLab />
-          </div>
+          </motion.div>
         )}
+        </AnimatePresence>
     </div>
   );
 }

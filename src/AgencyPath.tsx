@@ -1,6 +1,6 @@
 import React, { useRef, useMemo, useState, useEffect } from 'react';
 import { useFrame, useThree } from '@react-three/fiber';
-import { Text, Line, Float, Trail } from '@react-three/drei';
+import { Text, Line, Float, Trail, Html } from '@react-three/drei';
 import * as THREE from 'three';
 import { spatialAudio } from './audio/SpatialSynth';
 
@@ -10,6 +10,7 @@ export interface NodeData {
   quote: string;
   type: string;
   healed: boolean;
+  synthesizing?: boolean;
 }
 
 interface AgencyPathProps {
@@ -17,6 +18,8 @@ interface AgencyPathProps {
   onNodeInteract: (index: number) => void;
   onNodeDrop?: (index: number, pos: THREE.Vector3) => void;
   qiIntensity: number;
+  qiMapEnabled?: boolean;
+  onQiMapToggle?: (enabled: boolean) => void;
 }
 
 // ---------------------------------------------------------
@@ -59,7 +62,15 @@ function NodeVisual({ node, index, onClick, onDrop, qiIntensity }: { node: NodeD
 
     if (meshRef.current) {
       if (!node.healed) {
-        if (!isDragging) {
+        if (node.synthesizing) {
+          // Rapid spinning and expansion pulse representing synthesis transition
+          meshRef.current.rotation.y += delta * 15;
+          meshRef.current.rotation.x += delta * 7;
+          const scale = 1.35 + Math.sin(t * 18) * 0.3;
+          meshRef.current.scale.setScalar(scale);
+          // Pull towards forge core level at 0, -1, -5
+          meshRef.current.position.lerp(forgePos, 0.08);
+        } else if (!isDragging) {
           if (node.type === 'fear') {
              // erratic darting and rapid pulsing
              meshRef.current.position.x = node.position.x + Math.sin(t * 15) * 0.1;
@@ -204,6 +215,9 @@ function NodeVisual({ node, index, onClick, onDrop, qiIntensity }: { node: NodeD
   const getMaterialProps = () => {
     if (node.healed) {
       return { color: "#00ffcc", emissive: "#00ffcc", wireframe: false, emissiveIntensity: 1.5 };
+    }
+    if (node.synthesizing) {
+      return { color: "#ffcc00", emissive: "#ffaa00", wireframe: false, emissiveIntensity: 2.5 };
     }
     switch(node.type) {
       case 'regret': return { color: "#5555ff", emissive: "#0000ff", wireframe: true, emissiveIntensity: 0.8 };
@@ -588,10 +602,177 @@ function QiFlowStream({ points, qiIntensity, color, activeNodeType }: { points: 
 }
 
 // ---------------------------------------------------------
+// QI MAP VECTOR FIELD GRID OVERLAY
+// ---------------------------------------------------------
+function QiMapGrid({ nodes, qiIntensity }: { nodes: NodeData[], qiIntensity: number }) {
+  const lineSegmentsRef = useRef<THREE.LineSegments>(null!);
+  const forgePos = useMemo(() => new THREE.Vector3(0, -1, -5), []);
+
+  // Grid point coordinates on the floor plane
+  const gridPositions = useMemo(() => {
+    const arr = [];
+    // Spans from X = -16 to 16, Z = -16 to 16 in steps of 2
+    for (let x = -16; x <= 16; x += 2) {
+      for (let z = -16; z <= 16; z += 2) {
+        arr.push(new THREE.Vector3(x, -0.96, z));
+      }
+    }
+    return arr;
+  }, []);
+
+  const pointCount = gridPositions.length;
+
+  // Float arrays for rendering line segments
+  const { positions, colors } = useMemo(() => {
+    // Each grid point has 1 segment (2 vertices: start and end position)
+    const positions = new Float32Array(pointCount * 2 * 3);
+    const colors = new Float32Array(pointCount * 2 * 3);
+    return { positions, colors };
+  }, [pointCount]);
+
+  useFrame((state) => {
+    if (!lineSegmentsRef.current) return;
+    const time = state.clock.elapsedTime;
+    const numPoints = gridPositions.length;
+    const posAttr = lineSegmentsRef.current.geometry.attributes.position as THREE.BufferAttribute;
+    const colorAttr = lineSegmentsRef.current.geometry.attributes.color as THREE.BufferAttribute;
+
+    const baseColor = new THREE.Color('#00e1ff');
+    const accentNodeColor = new THREE.Color('#ff0055');
+    const inactiveColor = new THREE.Color('#002233');
+
+    for (let i = 0; i < numPoints; i++) {
+      const base = gridPositions[i];
+      const idx = i * 6; // 6 floats per line segment: 2 vertices * 3 coordinates (x, y, z)
+
+      // Compute vector field forces at this specific floor node position
+      const flow = new THREE.Vector3();
+
+      // Vector attraction towards Central Forge Core
+      const toForge = forgePos.clone().sub(base);
+      const distForge = toForge.length();
+      // Gravitational force pull scaling with distance
+      flow.addScaledVector(toForge.normalize(), 0.95 / (distForge + 1.0));
+
+      // Vector repulsion / attraction flows from unhealed / healed memory nodes
+      let nearestUnhealedDist = 999;
+      nodes.forEach(node => {
+        const toNode = node.position.clone().sub(base);
+        // Project onto floor plane, ignoring altitude
+        toNode.y = 0;
+        const distNode = toNode.length();
+
+        // Healed nodes draw the energy in, unhealed nodes act as turbulent obstacles
+        const influence = (node.healed ? 0.9 : -1.3) * (qiIntensity * 0.4 + 0.6) / (distNode * distNode + 0.5);
+        flow.addScaledVector(toNode.normalize(), influence);
+
+        if (!node.healed && distNode < nearestUnhealedDist) {
+          nearestUnhealedDist = distNode;
+        }
+      });
+
+      // Wave fluctuation over time (undulation)
+      const waveAngle = time * 1.2 + base.x * 0.2 + base.z * 0.2;
+      flow.x += Math.sin(waveAngle) * 0.3;
+      flow.z += Math.cos(waveAngle) * 0.3;
+
+      // Pulse length multiplier by current dynamic sound/visual intensity
+      flow.multiplyScalar(0.42 * (1.0 + qiIntensity * 0.18));
+
+      // Limit max line extent to keep the visual spacing clean and sharp
+      const maxLength = 1.35;
+      if (flow.length() > maxLength) {
+        flow.setLength(maxLength);
+      }
+
+      // Vertex A: Grid intersection base
+      positions[idx] = base.x;
+      positions[idx + 1] = base.y;
+      positions[idx + 2] = base.z;
+
+      // Vertex B: Vector endpoint location
+      positions[idx + 3] = base.x + flow.x;
+      positions[idx + 4] = base.y + flow.y;
+      positions[idx + 5] = base.z + flow.z;
+
+      // Dynamically shift color spectrum depending on proximity to turbulent sources
+      const startGlow = baseColor.clone();
+      if (nearestUnhealedDist < 4.0) {
+        // Warning heat map coloring around active trauma particles
+        startGlow.lerp(accentNodeColor, Math.max(0, 1 - (nearestUnhealedDist / 4.0)));
+      } else if (qiIntensity > 2.0) {
+        // Flare energy wave shifts theme colors
+        startGlow.lerp(new THREE.Color('#ff00ff'), Math.min(1.0, (qiIntensity - 2.0) / 3.0));
+      }
+
+      // Visual gradient flow: Glowing starting head, fading into dark deep space tail
+      colors[idx] = startGlow.r;
+      colors[idx + 1] = startGlow.g;
+      colors[idx + 2] = startGlow.b;
+
+      colors[idx + 3] = inactiveColor.r;
+      colors[idx + 4] = inactiveColor.g;
+      colors[idx + 5] = inactiveColor.b;
+    }
+
+    posAttr.needsUpdate = true;
+    colorAttr.needsUpdate = true;
+  });
+
+  return (
+    <group>
+      {/* 3D Line Grid Calculations */}
+      <lineSegments ref={lineSegmentsRef}>
+        <bufferGeometry>
+          <bufferAttribute
+            attach="attributes-position"
+            args={[positions, 3]}
+          />
+          <bufferAttribute
+            attach="attributes-color"
+            args={[colors, 3]}
+          />
+        </bufferGeometry>
+        <lineBasicMaterial
+          vertexColors
+          transparent
+          opacity={0.4}
+          linewidth={1}
+          depthWrite={false}
+          toneMapped={false}
+        />
+      </lineSegments>
+
+      {/* Decorative Base Coordinate Anchors */}
+      <points>
+        <bufferGeometry>
+          <bufferAttribute
+            attach="attributes-position"
+            args={[new Float32Array(gridPositions.flatMap(p => [p.x, p.y, p.z])), 3]}
+          />
+        </bufferGeometry>
+        <pointsMaterial
+          size={0.035}
+          color="#00ffe1"
+          transparent
+          opacity={0.25}
+          sizeAttenuation
+          depthWrite={false}
+          toneMapped={false}
+        />
+      </points>
+    </group>
+  );
+}
+
+// ---------------------------------------------------------
 // MAIN PATH MANAGER
 // ---------------------------------------------------------
-export default function AgencyPath({ nodes, onNodeInteract, onNodeDrop, qiIntensity }: AgencyPathProps) {
+export default function AgencyPath({ nodes, onNodeInteract, onNodeDrop, qiIntensity, qiMapEnabled, onQiMapToggle }: AgencyPathProps) {
   const lineRef = useRef<any>(null);
+
+  const [localQiMap, setLocalQiMap] = useState(false);
+  const showQiMap = qiMapEnabled !== undefined ? qiMapEnabled : localQiMap;
 
   // Dynamic Curve representing the life timeline
   const curve = useMemo(() => {
@@ -638,6 +819,14 @@ export default function AgencyPath({ nodes, onNodeInteract, onNodeDrop, qiIntens
     }
   });
 
+  const handleToggleQiMap = () => {
+    if (onQiMapToggle) {
+      onQiMapToggle(!showQiMap);
+    } else {
+      setLocalQiMap(prev => !prev);
+    }
+  };
+
   return (
     <group>
       <Line
@@ -670,6 +859,27 @@ export default function AgencyPath({ nodes, onNodeInteract, onNodeDrop, qiIntens
 
       {/* Central Agency Pillar & Wealth Fortress */}
       <AgencyPillar nodes={nodes} qiIntensity={qiIntensity} />
+
+      {/* Dynamic Floor Vector Field Grid Overlay when Active */}
+      {showQiMap && (
+        <QiMapGrid nodes={nodes} qiIntensity={qiIntensity} />
+      )}
+
+      {/* Embedded Floating Screen Toggle button for immediate standalone access */}
+      <Html fullscreen style={{ pointerEvents: 'none' }}>
+        <div className="absolute bottom-24 left-6 z-20 pointer-events-auto flex flex-col items-start gap-1">
+          <button
+            onClick={handleToggleQiMap}
+            className={`px-4 py-2 border font-mono text-[10px] md:text-xs uppercase tracking-widest backdrop-blur-md transition-all active:scale-95 duration-200 rounded shadow-[0_0_15px_rgba(0,255,180,0.1)] ${
+              showQiMap 
+                ? 'bg-[#00ffcc]/20 border-[#00ffcc] text-[#00ffcc] shadow-[0_0_20px_rgba(0,255,204,0.3)] font-semibold' 
+                : 'bg-black/60 border-cyan-500/20 text-cyan-400/70 hover:text-cyan-300 hover:border-cyan-400/55'
+            }`}
+          >
+            [ {showQiMap ? 'Qi Map: Active' : 'Qi Map: Off'} ]
+          </button>
+        </div>
+      </Html>
     </group>
   );
 }

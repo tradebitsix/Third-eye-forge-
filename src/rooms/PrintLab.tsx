@@ -6,6 +6,7 @@ import { STLExporter, GLTFExporter, STLLoader, OBJLoader } from 'three-stdlib';
 import { GoogleGenAI } from '@google/genai';
 import { useWebGLAvailable } from '../webglCheck';
 import { WebGLErrorBoundary } from '../components/WebGLErrorBoundary';
+import HolographicAvatar from '../components/HolographicAvatar';
 
 // Safe retrieval of Gemini API Key to prevent ReferenceError in browser
 const GEMINI_API_KEY = (() => {
@@ -56,6 +57,7 @@ function GeneratedObject({ activePrint, imagePreview, scaleOverride = 1, uploade
         imagePreview,
         (tex) => {
           tex.colorSpace = THREE.SRGBColorSpace;
+          tex.needsUpdate = true;
           setTexture(tex);
         },
         undefined,
@@ -134,30 +136,7 @@ function GeneratedObject({ activePrint, imagePreview, scaleOverride = 1, uploade
               />
            </mesh>
         ) : texture ? (
-          <group>
-            {/* Main display facing forward */}
-            <mesh position={[0, 0, (scaleZ * 0.9) / 2]}>
-              <planeGeometry args={[texScaleX * 0.9, texScaleY * 0.9]} />
-              <meshStandardMaterial 
-                map={texture} 
-                alphaTest={0.5}
-                transparent={false}
-                side={THREE.DoubleSide}
-                roughness={0.3}
-                metalness={0.2}
-              />
-            </mesh>
-            {/* Outline mesh instead of 30 overlays to save GPU fill rate and prevent browser OOM */}
-            <mesh position={[0, 0, 0]}>
-              <boxGeometry args={[texScaleX * 0.9, texScaleY * 0.9, scaleZ * 0.9]} />
-              <meshBasicMaterial 
-                color="#00aaff"
-                wireframe={true}
-                transparent={true}
-                opacity={0.15}
-              />
-            </mesh>
-          </group>
+          <HolographicAvatar texture={texture} texScaleX={texScaleX} texScaleY={texScaleY} scaleZ={scaleZ} />
         ) : (
           <mesh>
             <boxGeometry args={[scaleX, scaleY, scaleZ]} />
@@ -403,8 +382,9 @@ export default function PrintLab() {
          try {
            // Use canvas to shrink large photos from phones (stops iOS Safari / WebGL OOM)
            const canvas = document.createElement('canvas');
-           const MAX_WIDTH = 1024;
-           const MAX_HEIGHT = 1024;
+           // Reduce max size to 800x800 to aggressively prevent Mobile Safari OOM
+           const MAX_WIDTH = 800;
+           const MAX_HEIGHT = 800;
            let width = img.width;
            let height = img.height;
            
@@ -425,10 +405,14 @@ export default function PrintLab() {
              setImagePreview(dataUrl);
              setBase64Data(dataUrl.split(',')[1]);
              
-             // Automatically trigger process
+             // Free canvas memory explicitly for iOS Safari
+             canvas.width = 0;
+             canvas.height = 0;
+             
+             // Automatically trigger process after processing the image
              setTimeout(() => {
-                const formSubmitButton = document.getElementById("generate_render_btn");
-                if (formSubmitButton) formSubmitButton.click();
+                const syntheticEvent = { preventDefault: () => {} } as React.FormEvent;
+                handleProcess(syntheticEvent);
              }, 300);
            }
            
@@ -488,9 +472,7 @@ export default function PrintLab() {
     setStatus("AI ANALYZING DIMENSIONS & PRINT PARAMETERS...");
     
     try {
-      if (GEMINI_API_KEY) {
-        const ai = new GoogleGenAI({ apiKey: GEMINI_API_KEY });
-        
+      if (true) {
         let contents: any = {
            parts: [{
              text: `You are a 3D printing expert system generating specifications for a Labists FDM printer.
@@ -520,16 +502,30 @@ export default function PrintLab() {
             };
         }
 
-        const response = await ai.models.generateContent({
-           model: "gemini-3.5-flash", 
-           contents,
-           config: {
-             responseMimeType: "application/json"
-           }
+        const response = await fetch('/api/gemini/generateContent', {
+           method: 'POST',
+           headers: { 'Content-Type': 'application/json' },
+           body: JSON.stringify({
+             model: "gemini-2.5-flash",
+             contents,
+             config: {
+               responseMimeType: "application/json"
+             }
+           })
         });
+        
+        let responseData;
+        try {
+           responseData = await response.json();
+           if (!response.ok) {
+              throw new Error(responseData.error?.message || responseData.error || "Failed to generate standard print parameters");
+           }
+        } catch (err: any) {
+           throw new Error(err.message || await response.text());
+        }
 
-        if (response.text) {
-           let rawText = response.text.trim();
+        if (responseData.text) {
+           let rawText = responseData.text.trim();
            if (rawText.startsWith('```')) {
              rawText = rawText.replace(/```json/gi, '').replace(/```/g, '').trim();
            }
@@ -542,10 +538,19 @@ export default function PrintLab() {
                setIsProcessing(false);
                return;
            }
+           
+           const parseDim = (val: any, fallback: number) => {
+              const parsed = parseFloat(String(val).replace(/[^0-9.]/g, ''));
+              return (isNaN(parsed) || parsed <= 1) ? fallback : parsed;
+           };
 
            const safeData = {
                partName: data.partName || "Custom Part",
-               dimensions: data.dimensions || { x: 150, y: 50, z: 80 },
+               dimensions: { 
+                 x: data.dimensions ? parseDim(data.dimensions.x, 150) : 150,
+                 y: data.dimensions ? parseDim(data.dimensions.y, 50) : 50,
+                 z: data.dimensions ? parseDim(data.dimensions.z, 80) : 80 
+               },
                material: data.material || "PLA",
                infill: data.infill || "15%",
                layerHeight: data.layerHeight || "0.2mm",
